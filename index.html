@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>إختبارات </title>
+    
+    <!-- Meta Tags -->
+    <meta name="description" content="نظام متكامل للاختبارات الإلكترونية لطلبة الأزهر الشريف">
+    <meta name="keywords" content="اختبارات, الأزهر, تعليم, اختبارات إلكترونية, ">
+    <meta name="author" content="إختبارات ">
+    
+    <!-- Favicon -->
+    <link rel="icon" href="icon.png">
+    
+    <!-- Fonts & Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- CSS الرئيسي -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <div class="header-left">
+                <button class="header-back-btn" id="header-back-btn" title="رجوع" style="display: none;">
+                    <i class="fas fa-arrow-left"></i>
+                </button>
+                <div class="logo-container" id="logo-container">
+                    <img src="icon.png" alt="Logo" class="logo-img">
+                    <div class="logo">الاختبارات</div>
+                </div>
+            </div>
+            
+            <div class="header-right">
+                <button class="theme-toggle" id="theme-toggle" title="تبديل الوضع الليلي">
+                    <i class="fas fa-moon"></i>
+                </button>
+            </div>
+        </header>
+        
+        <!-- Ad Container -->
+        <div id="ad-container" class="ad-container" style="display: none;">
+            <button class="ad-close" id="ad-close">
+                <i class="fas fa-times"></i>
+            </button>
+            <h3 id="ad-title">إعلان</h3>
+            <p id="ad-description">وصف الإعلان</p>
+            <button class="btn btn-warning" id="ad-action">
+                <i class="fas fa-external-link-alt"></i> اضغط هنا
+            </button>
+        </div>
+        
+        <!-- Year Selection -->
+        <div id="year-selection-container" class="year-selection">
+            <div class="year-card card-3d" data-year="secondary1">
+                <i class="fas fa-award"></i>
+                <h3>الصف الأول الثانوي</h3>
+                <p>إختبارات خاصة بالصف الأول الثانوي الأزهري</p>
+            </div>
+            <div class="year-card card-3d" data-year="secondary2">
+                <i class="fas fa-medal"></i>
+                <h3>الصف الثاني الثانوي</h3>
+                <p>إختبارات خاصة بالصف الثاني الثانوي الأزهري</p>
+            </div>
+            <div class="year-card card-3d" data-year="secondary3">
+                <i class="fas fa-trophy"></i>
+                <h3>الصف الثالث الثانوي</h3>
+                <p>إختبارات خاصة بالصف الثالث الثانوي الأزهري</p>
+            </div>
+        </div>
+        
+        <!-- Section Selection -->
+        <div id="section-selection-container" class="card" style="display: none;">
+            <h2 class="text-center mb-3">اختر القسم</h2>
+            <div class="section-grid" id="section-container"></div>
+        </div>
+        
+        <!-- Subject Selection -->
+        <div id="subject-selection-container" class="card" style="display: none;">
+            <h2 class="text-center mb-3">اختر المادة الدراسية</h2>
+            <div class="section-grid" id="subject-container"></div>
+        </div>
+        
+        <!-- Lesson Selection -->
+        <div id="lesson-selection-container" class="card" style="display: none;">
+            <h2 class="text-center mb-3">اختر الدرس</h2>
+            <div class="lesson-grid" id="lesson-container"></div>
+        </div>
+
+        <!-- Sublesson Selection -->
+        <div id="sublesson-selection-container" class="card" style="display: none;">
+            <h2 class="text-center mb-3">اختر القسم الفرعي</h2>
+            <div class="sublesson-grid" id="sublesson-container"></div>
+        </div>
+        
+        <!-- Quiz Container -->
+        <div class="quiz-container" id="quiz-container" style="display: none;">
+            <div class="loading-overlay" id="quiz-loading">
+                <div class="scientific-loader">
+                    <div class="atom-core"></div>
+                    <div class="electron-orbit"><div class="electron"></div></div>
+                    <div class="electron-orbit"><div class="electron"></div></div>
+                    <div class="electron-orbit"><div class="electron"></div></div>
+                </div>
+                <div class="loading-text">جاري تحميل الإختبارات<span class="loading-dots"></span></div>
+                <div class="loading-subtext">نظام إختبارات الاختبارات- التعليم الذكي</div>
+            </div>
+            
+            <div class="quiz-header">
+                <h2 id="quiz-title">اختبار إختبارات الاختبارات</h2>
+                <div class="timer" id="timer">
+                    <i class="fas fa-clock"></i>
+                    <span>الوقت المتبقي: 10:00</span>
+                </div>
+                <div class="progress-container">
+                    <div class="progress-bar" id="progress-bar"></div>
+                </div>
+            </div>
+            
+            <div class="category-filter" id="category-filter" style="display: none;">
+                <label for="category-select">تصفية الإختبارات حسب التصنيف:</label>
+                <select id="category-select" class="form-control">
+                    <option value="all">جميع التصنيفات</option>
+                </select>
+            </div>
+            
+            <div id="question-container"></div>
+            
+            <div class="navigation">
+                <button class="btn btn-secondary btn-3d" id="prev-btn" disabled>
+                    <i class="fas fa-arrow-right"></i> السابق
+                </button>
+                <button class="btn btn-primary btn-3d" id="next-btn">
+                    التالي <i class="fas fa-arrow-left"></i>
+                </button>
+                <button class="btn btn-success btn-3d" id="submit-btn" style="display: none;">
+                    <i class="fas fa-check-circle"></i> إظهار النتيجة
+                </button>
+            </div>
+        </div>
+        
+        <!-- Results Container -->
+        <div class="results-container" id="results-container">
+            <h2>نتيجة الاختبار</h2>
+            <div class="stats">
+                <div class="stat-item card-3d">
+                    <div class="stat-value" id="score-value">0</div>
+                    <div class="stat-label">الدرجة</div>
+                </div>
+                <div class="stat-item card-3d">
+                    <div class="stat-value" id="percentage">0%</div>
+                    <div class="stat-label">النسبة المئوية</div>
+                </div>
+                <div class="stat-item card-3d">
+                    <div class="stat-value" id="time-taken">00:00</div>
+                    <div class="stat-label">الوقت المستغرق</div>
+                </div>
+            </div>
+            <div class="feedback" id="feedback"></div>
+            <button class="btn btn-primary btn-3d" id="restart-btn">
+                <i class="fas fa-redo"></i> إعادة الاختبار
+            </button>
+        </div>
+    </div>
+    
+    <!-- Back Button (Hidden) -->
+    <div class="back-btn btn-3d" id="back-btn" style="display: none !important;">
+        <i class="fas fa-arrow-left"></i>
+    </div>
+    
+    <!-- Admin Toggle -->
+    <div class="admin-toggle btn-3d" id="admin-toggle">
+        <i class="fas fa-cog"></i>
+    </div>
+    
+    <!-- Admin Panel -->
+    <div class="admin-panel" id="admin-panel">
+        <div class="admin-header">
+            <h2><i class="fas fa-cogs"></i> لوحة التحكم الإدارية</h2>
+            <button class="close-admin" id="close-admin"><i class="fas fa-times"></i></button>
+        </div>
+        
+        <div class="admin-nav">
+            <div class="admin-nav-item active" data-tab="add-question"><i class="fas fa-plus-circle"></i><span>إضافة سؤال</span></div>
+            <div class="admin-nav-item" data-tab="manage-questions"><i class="fas fa-question-circle"></i><span>إدارة الأسئلة</span></div>
+            <div class="admin-nav-item" data-tab="settings"><i class="fas fa-cog"></i><span>الإعدادات</span></div>
+            <div class="admin-nav-item" data-tab="stats"><i class="fas fa-chart-bar"></i><span>الإحصائيات</span></div>
+            <div class="admin-nav-item" data-tab="user-analytics"><i class="fas fa-users"></i><span>إحصائيات المستخدمين</span></div>
+            <div class="admin-nav-item" data-tab="sections"><i class="fas fa-layer-group"></i><span>إدارة الأقسام</span></div>
+            <div class="admin-nav-item" data-tab="subjects"><i class="fas fa-book"></i><span>إدارة المواد</span></div>
+            <div class="admin-nav-item" data-tab="lessons"><i class="fas fa-book-open"></i><span>إدارة الدروس</span></div>
+            <div class="admin-nav-item" data-tab="sublessons"><i class="fas fa-folder"></i><span>إدارة الأقسام الفرعية</span></div>
+            <div class="admin-nav-item" data-tab="ads"><i class="fas fa-ad"></i><span>إدارة الإعلانات</span></div>
+            <div class="admin-nav-item" data-tab="backup"><i class="fas fa-database"></i><span>النسخ الاحتياطي</span></div>
+        </div>
+        
+        <div class="admin-content">
+            <!-- Add Question Tab -->
+            <div id="add-question-tab" class="admin-tab-content active">
+                <div class="admin-card">
+                    <h3><i class="fas fa-plus-circle"></i> إضافة سؤال جديد</h3>
+                    <div class="admin-form">
+                        <div class="form-group">
+                            <label for="question-text">نص السؤال:</label>
+                            <textarea id="question-text" class="form-control" rows="3" placeholder="أدخل نص السؤال هنا"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="question-type">نوع السؤال:</label>
+                            <select id="question-type" class="form-control">
+                                <option value="mcq">اختيار من متعدد</option>
+                                <option value="truefalse">صح أم خطأ</option>
+                            </select>
+                        </div>
+                        <div id="mcq-options">
+                            <div class="form-group">
+                                <label>الخيارات:</label>
+                                <input type="text" id="option1" class="form-control option-input" placeholder="الخيار الأول">
+                                <input type="text" id="option2" class="form-control option-input" placeholder="الخيار الثاني">
+                                <input type="text" id="option3" class="form-control option-input" placeholder="الخيار الثالث">
+                                <input type="text" id="option4" class="form-control option-input" placeholder="الخيار الرابع">
+                            </div>
+                            <div class="form-group">
+                                <label for="correct-answer">الإجابة الصحيحة:</label>
+                                <select id="correct-answer" class="form-control">
+                                    <option value="1">الخيار الأول</option>
+                                    <option value="2">الخيار الثاني</option>
+                                    <option value="3">الخيار الثالث</option>
+                                    <option value="4">الخيار الرابع</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div id="truefalse-options" style="display: none;">
+                            <div class="form-group">
+                                <label for="tf-correct-answer">الإجابة الصحيحة:</label>
+                                <select id="tf-correct-answer" class="form-control">
+                                    <option value="true">صح</option>
+                                    <option value="false">خطأ</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="question-category">التصنيف:</label>
+                            <input type="text" id="question-category" class="form-control" placeholder="تصنيف السؤال (اختياري)">
+                        </div>
+                        <div class="form-group">
+                            <label for="question-difficulty">مستوى الصعوبة:</label>
+                            <select id="question-difficulty" class="form-control">
+                                <option value="easy">سهل</option>
+                                <option value="medium">متوسط</option>
+                                <option value="hard">صعب</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="question-year">الصف الدراسي:</label>
+                            <select id="question-year" class="form-control">
+                                <option value="secondary1">الصف الأول الثانوي</option>
+                                <option value="secondary2">الصف الثاني الثانوي</option>
+                                <option value="secondary3">الصف الثالث الثانوي</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="question-section">القسم:</label>
+                            <select id="question-section" class="form-control"></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="question-subject">المادة الدراسية:</label>
+                            <select id="question-subject" class="form-control"></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="question-lesson">الدرس:</label>
+                            <select id="question-lesson" class="form-control"></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="question-sublesson">القسم الفرعي:</label>
+                            <select id="question-sublesson" class="form-control"></select>
+                        </div>
+                        <button class="btn-admin" id="add-question-btn">
+                            <i class="fas fa-plus"></i> إضافة السؤال
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Manage Questions Tab -->
+            <div id="manage-questions-tab" class="admin-tab-content">
+                <div class="admin-card">
+                    <h3><i class="fas fa-list"></i> جميع الأسئلة</h3>
+                    <div class="admin-filters">
+                        <select id="filter-year" class="form-control">
+                            <option value="">جميع الصفوف</option>
+                            <option value="secondary1">الصف الأول الثانوي</option>
+                            <option value="secondary2">الصف الثاني الثانوي</option>
+                            <option value="secondary3">الصف الثالث الثانوي</option>
+                        </select>
+                        <select id="filter-section" class="form-control">
+                            <option value="">جميع الأقسام</option>
+                        </select>
+                        <select id="filter-subject" class="form-control">
+                            <option value="">جميع المواد</option>
+                        </select>
+                        <select id="filter-type" class="form-control">
+                            <option value="">جميع الأنواع</option>
+                            <option value="mcq">اختيار من متعدد</option>
+                            <option value="truefalse">صح أم خطأ</option>
+                        </select>
+                    </div>
+                    <div id="all-questions-list" class="questions-list"></div>
+                </div>
+            </div>
+            
+            <!-- Settings Tab -->
+            <div id="settings-tab" class="admin-tab-content">
+                <div class="admin-card">
+                    <h3><i class="fas fa-cog"></i> إعدادات النظام</h3>
+                    <div class="setting-item">
+                        <label class="setting-label">مدة الاختبار (بالدقائق):</label>
+                        <input type="number" id="exam-time" class="form-control" min="1" max="120" value="10">
+                    </div>
+                    <div class="setting-item">
+                        <div class="switch-container">
+                            <label class="admin-switch">
+                                <input type="checkbox" id="exam-status" checked>
+                                <span class="admin-slider"></span>
+                            </label>
+                            <span class="switch-label">تفعيل الاختبارات</span>
+                        </div>
+                    </div>
+                    <div class="setting-item">
+                        <label class="setting-label">كلمة المرور الإدارية:</label>
+                        <input type="password" id="admin-password-setting" class="form-control" value="gohary01010081147mo">
+                    </div>
+                    <button class="btn-admin" id="save-settings-btn">
+                        <i class="fas fa-save"></i> حفظ الإعدادات
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Stats Tab -->
+            <div id="stats-tab" class="admin-tab-content">
+                <div class="admin-card">
+                    <h3><i class="fas fa-chart-bar"></i> إحصائيات عامة</h3>
+                    <div class="admin-stats-grid">
+                        <div class="admin-stat-card">
+                            <div class="admin-stat-value" id="total-questions">0</div>
+                            <div class="admin-stat-label">إجمالي الأسئلة</div>
+                        </div>
+                        <div class="admin-stat-card">
+                            <div class="admin-stat-value" id="total-quizzes">0</div>
+                            <div class="admin-stat-label">إجمالي الاختبارات</div>
+                        </div>
+                        <div class="admin-stat-card">
+                            <div class="admin-stat-value" id="avg-score">0%</div>
+                            <div class="admin-stat-label">متوسط النتائج</div>
+                        </div>
+                        <div class="admin-stat-card">
+                            <div class="admin-stat-value" id="active-users">0</div>
+                            <div class="admin-stat-label">مستخدمين نشطين</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="admin-card">
+                    <h3><i class="fas fa-history"></i> أحدث النتائج</h3>
+                    <div id="recent-results"></div>
+                </div>
+            </div>
+            
+            <!-- User Analytics Tab -->
+            <div id="user-analytics-tab" class="admin-tab-content">
+                <div class="admin-card">
+                    <h3><i class="fas fa-users"></i> إحصائيات المستخدمين</h3>
+                    <div class="user-stats-grid">
+                        <div class="user-stat-card">
+                            <div class="user-stat-value" id="total-users-count">0</div>
+                            <div class="user-stat-label">إجمالي المستخدمين</div>
+                        </div>
+                        <div class="user-stat-card">
+                            <div class="user-stat-value" id="active-users-count">0</div>
+                            <div class="user-stat-label">مستخدمين نشطين</div>
+                        </div>
+                        <div class="user-stat-card">
+                            <div class="user-stat-value" id="daily-active-count">0</div>
+                            <div class="user-stat-label">نشطين اليوم</div>
+                        </div>
+                        <div class="user-stat-card">
+                            <div class="user-stat-value" id="avg-session-count">0</div>
+                            <div class="user-stat-label">متوسط الجلسات</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="admin-card">
+                    <h3><i class="fas fa-chart-line"></i> نشاط المستخدمين</h3>
+                    <div class="user-chart-container">
+                        <div class="user-chart" id="user-activity-chart"></div>
+                    </div>
+                </div>
+                
+                <div class="admin-card">
+                    <h3><i class="fas fa-history"></i> أحدث النشاطات</h3>
+                    <div id="user-activity-list" class="user-activity-list"></div>
+                </div>
+            </div>
+            
+            <!-- Sections Tab -->
+            <div id="sections-tab" class="admin-tab-content">
+                <div class="admin-card">
+                    <h3><i class="fas fa-plus-circle"></i> إضافة قسم جديد</h3>
+                    <div class="admin-form">
+                        <div class="form-group">
+                            <label for="new-section-name">اسم القسم:</label>
+                            <input type="text" id="new-section-name" class="form-control" placeholder="أدخل اسم القسم">
+                        </div>
+                        <div class="form-group">
+                            <label for="new-section-description">وصف القسم:</label>
+                            <textarea id="new-section-description" class="form-control" placeholder="أدخل وصف القسم"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="new-section-icon">أيقونة القسم:</label>
+                            <select id="new-section-icon" class="form-control">
+                                <option value="fas fa-book">كتاب</option>
+                                <option value="fas fa-calculator">آلة حاسبة</option>
+                                <option value="fas fa-flask">مختبر</option>
+                                <option value="fas fa-globe">عالم</option>
+                                <option value="fas fa-history">تاريخ</option>
+                                <option value="fas fa-quran">قرآن</option>
+                                <option value="fas fa-language">لغة</option>
+                                <option value="fas fa-atom">علوم</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>الصفوف المرتبطة:</label>
+                            <div class="grades-checkboxes">
+                                <label><input type="checkbox" name="section-grades" value="secondary1"> الصف الأول الثانوي</label>
+                                <label><input type="checkbox" name="section-grades" value="secondary2"> الصف الثاني الثانوي</label>
+                                <label><input type="checkbox" name="section-grades" value="secondary3"> الصف الثالث الثانوي</label>
+                            </div>
+                        </div>
+                        <button class="btn-admin" id="add-section-btn">
+                            <i class="fas fa-plus"></i> إضافة قسم
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="admin-card">
+                    <h3><i class="fas fa-list"></i> الأقسام الحالية</h3>
+                    <div id="sections-list" class="questions-list"></div>
+                </div>
+            </div>
+            
+            <!-- Subjects Tab -->
+            <div id="subjects-tab" class="admin-tab-content">
+                <div class="admin-card">
+                    <h3><i class="fas fa-plus-circle"></i> إضافة مادة جديدة</h3>
+                    <div class="admin-form">
+                        <div class="form-group">
+                            <label for="new-subject-name">اسم المادة:</label>
+                            <input type="text" id="new-subject-name" class="form-control" placeholder="أدخل اسم المادة">
+                        </div>
+                        <div class="form-group">
+                            <label for="new-subject-description">وصف المادة:</label>
+                            <textarea id="new-subject-description" class="form-control" placeholder="أدخل وصف المادة"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="new-subject-section">القسم التابع له:</label>
+                            <select id="new-subject-section" class="form-control"></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="new-subject-icon">أيقونة المادة:</label>
+                            <select id="new-subject-icon" class="form-control">
+                                <option value="fa-atom">علوم (ذرة)</option>
+                                <option value="fa-flask">كيمياء</option>
+                                <option value="fa-calculator">رياضيات</option>
+                                <option value="fa-dna">أحياء</option>
+                                <option value="fa-language">لغة عربية</option>
+                                <option value="fa-book-open">أدب</option>
+                                <option value="fa-pray">فقه</option>
+                                <option value="fa-quran">قرآن</option>
+                                <option value="fa-hands-praying">حديث</option>
+                                <option value="fa-mosque">توحيد</option>
+                                <option value="fa-globe">جغرافيا</option>
+                                <option value="fa-history">تاريخ</option>
+                                <option value="fa-brain">منطق</option>
+                                <option value="fa-scroll">بلاغة</option>
+                                <option value="fa-comment">إنشاء</option>
+                                <option value="fa-infinity">هندسة</option>
+                            </select>
+                        </div>
+                        <button class="btn-admin" id="add-subject-btn">
+                            <i class="fas fa-plus"></i> إضافة مادة
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="admin-card">
+                    <h3><i class="fas fa-list"></i> المواد الحالية</h3>
+                    <div id="subjects-list" class="questions-list"></div>
+                </div>
+            </div>
+            
+            <!-- Lessons Tab -->
+            <div id="lessons-tab" class="admin-tab-content">
+                <div class="admin-card">
+                    <h3><i class="fas fa-plus-circle"></i> إضافة درس جديد</h3>
+                    <div class="admin-form">
+                        <div class="form-group">
+                            <label for="new-lesson-name">اسم الدرس:</label>
+                            <input type="text" id="new-lesson-name" class="form-control" placeholder="أدخل اسم الدرس">
+                        </div>
+                        <div class="form-group">
+                            <label for="new-lesson-description">وصف الدرس:</label>
+                            <textarea id="new-lesson-description" class="form-control" placeholder="أدخل وصف الدرس"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="new-lesson-subject">المادة التابع لها:</label>
+                            <select id="new-lesson-subject" class="form-control"></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="new-lesson-icon">أيقونة الدرس:</label>
+                            <select id="new-lesson-icon" class="form-control">
+                                <option value="fa-book-open">كتاب مفتوح</option>
+                                <option value="fa-chalkboard-teacher">سبورة</option>
+                                <option value="fa-graduation-cap">تخرج</option>
+                                <option value="fa-lightbulb">فكرة</option>
+                                <option value="fa-puzzle-piece">أحجية</option>
+                                <option value="fa-brain">عقل</option>
+                                <option value="fa-flask">تجربة</option>
+                                <option value="fa-calculator">حساب</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="new-lesson-order">ترتيب الدرس:</label>
+                            <input type="number" id="new-lesson-order" class="form-control" placeholder="ترتيب العرض" min="1" value="1">
+                        </div>
+                        <button class="btn-admin" id="add-lesson-btn">
+                            <i class="fas fa-plus"></i> إضافة درس
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="admin-card">
+                    <h3><i class="fas fa-list"></i> الدروس الحالية</h3>
+                    <div id="lessons-list" class="questions-list"></div>
+                </div>
+            </div>
+
+            <!-- Sublessons Tab -->
+            <div id="sublessons-tab" class="admin-tab-content">
+                <div class="admin-card">
+                    <h3><i class="fas fa-plus-circle"></i> إضافة قسم فرعي جديد</h3>
+                    <div class="admin-form">
+                        <div class="form-group">
+                            <label for="new-sublesson-name">اسم القسم الفرعي:</label>
+                            <input type="text" id="new-sublesson-name" class="form-control" placeholder="أدخل اسم القسم الفرعي">
+                        </div>
+                        <div class="form-group">
+                            <label for="new-sublesson-description">وصف القسم الفرعي:</label>
+                            <textarea id="new-sublesson-description" class="form-control" placeholder="أدخل وصف القسم الفرعي"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="new-sublesson-lesson">الدرس التابع له:</label>
+                            <select id="new-sublesson-lesson" class="form-control"></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="new-sublesson-icon">أيقونة القسم الفرعي:</label>
+                            <select id="new-sublesson-icon" class="form-control">
+                                <option value="fa-folder">مجلد</option>
+                                <option value="fa-folder-open">مجلد مفتوح</option>
+                                <option value="fa-bookmark">إشارة مرجعية</option>
+                                <option value="fa-tag">علامة</option>
+                                <option value="fa-hashtag">هاشتاج</option>
+                                <option value="fa-layer-group">طبقات</option>
+                                <option value="fa-sitemap">هيكل</option>
+                                <option value="fa-project-diagram">مخطط</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="new-sublesson-order">ترتيب القسم الفرعي:</label>
+                            <input type="number" id="new-sublesson-order" class="form-control" placeholder="ترتيب العرض" min="1" value="1">
+                        </div>
+                        <button class="btn-admin" id="add-sublesson-btn">
+                            <i class="fas fa-plus"></i> إضافة قسم فرعي
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="admin-card">
+                    <h3><i class="fas fa-list"></i> الأقسام الفرعية الحالية</h3>
+                    <div id="sublessons-list" class="questions-list"></div>
+                </div>
+            </div>
+            
+            <!-- Ads Tab -->
+            <div id="ads-tab" class="admin-tab-content">
+                <div class="admin-card">
+                    <h3><i class="fas fa-ad"></i> إدارة الإعلانات</h3>
+                    <div class="admin-form">
+                        <div class="form-group">
+                            <label for="ad-title-input">عنوان الإعلان:</label>
+                            <input type="text" id="ad-title-input" class="form-control" placeholder="أدخل عنوان الإعلان">
+                        </div>
+                        <div class="form-group">
+                            <label for="ad-description-input">وصف الإعلان:</label>
+                            <textarea id="ad-description-input" class="form-control" placeholder="أدخل وصف الإعلان" rows="3"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="ad-url-input">رابط الإعلان:</label>
+                            <input type="url" id="ad-url-input" class="form-control" placeholder="https://example.com">
+                        </div>
+                        <div class="form-group">
+                            <label for="ad-status-input">حالة الإعلان:</label>
+                            <select id="ad-status-input" class="form-control">
+                                <option value="active">نشط</option>
+                                <option value="inactive">غير نشط</option>
+                            </select>
+                        </div>
+                        <button class="btn-admin" id="save-ad-btn">
+                            <i class="fas fa-save"></i> حفظ الإعلان
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="admin-card">
+                    <h3><i class="fas fa-eye"></i> معاينة الإعلان</h3>
+                    <div class="ad-preview">
+                        <h4>معاينة الإعلان</h4>
+                        <div class="ad-content" id="ad-preview">
+                            <h5 id="preview-ad-title">عنوان الإعلان</h5>
+                            <p id="preview-ad-description">وصف الإعلان سيظهر هنا</p>
+                            <button class="btn btn-warning btn-sm">اضغط هنا</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Backup Tab -->
+            <div id="backup-tab" class="admin-tab-content">
+                <div class="admin-card">
+                    <h3><i class="fas fa-database"></i> النسخ الاحتياطي</h3>
+                    <div class="setting-item">
+                        <label class="setting-label">النسخ الاحتياطي التلقائي:</label>
+                        <div class="switch-container">
+                            <label class="admin-switch">
+                                <input type="checkbox" id="auto-backup" checked>
+                                <span class="admin-slider"></span>
+                            </label>
+                            <span class="switch-label">تفعيل النسخ التلقائي</span>
+                        </div>
+                        <p style="color: var(--text-secondary); font-size: 14px; margin-top: 5px;">
+                            سيتم إنشاء نسخة احتياطية تلقائيًا عند إضافة أو تعديل أي بيانات
+                        </p>
+                    </div>
+                    
+                    <div class="setting-item">
+                        <label class="setting-label">إنشاء نسخة احتياطية يدويًا:</label>
+                        <button class="backup-btn" id="manual-backup-btn">
+                            <i class="fas fa-download"></i> إنشاء نسخة احتياطية
+                        </button>
+                        <div id="backup-status" class="backup-status"></div>
+                    </div>
+                    
+                    <div class="setting-item">
+                        <label class="setting-label">استعادة نسخة احتياطية:</label>
+                        <input type="file" id="backup-file" class="form-control" accept=".json">
+                        <button class="backup-btn" id="restore-backup-btn" style="margin-top: 10px;">
+                            <i class="fas fa-upload"></i> استعادة النسخة
+                        </button>
+                    </div>
+                    
+                    <div class="setting-item">
+                        <label class="setting-label">آخر نسخة احتياطية:</label>
+                        <div id="last-backup-info" style="color: var(--text-secondary); font-size: 14px;">
+                            لم يتم إنشاء أي نسخة احتياطية بعد
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Password Modal -->
+    <div class="password-modal" id="password-modal">
+        <div class="modal-box">
+            <h3><i class="fas fa-lock"></i> الرجاء إدخال كلمة المرور</h3>
+            <input type="password" class="form-control" id="admin-password" placeholder="كلمة المرور">
+            <div class="modal-buttons">
+                <button class="btn-admin" id="password-submit"><i class="fas fa-check"></i> تأكيد</button>
+                <button class="btn btn-secondary" id="password-cancel"><i class="fas fa-times"></i> إلغاء</button>
+            </div>
+            <p id="password-error" class="error-message" style="display: none; margin-top: 10px;">
+                <i class="fas fa-exclamation-circle"></i> كلمة المرور غير صحيحة
+            </p>
+        </div>
+    </div>
+    
+    <!-- Overlay -->
+    <div class="overlay" id="overlay"></div>
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+    
+    <!-- JavaScript الرئيسي -->
+    <script src="script.js"></script>
+</body>
+</html>
