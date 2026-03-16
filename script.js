@@ -13,48 +13,90 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = firebase.initializeApp(firebaseConfig);
 const database = firebase.database();
-const auth = firebase.auth();
 
+// =============================================
+// هيكل قاعدة البيانات العلائقية (Relational Database Structure)
+// =============================================
+const DB = {
+    // الجداول الرئيسية
+    users: 'users',              // المستخدمين
+    admins: 'admins',            // المشرفين
+    profiles: 'user_profiles',    // ملفات المستخدمين (بيانات إضافية)
+    sessions: 'user_sessions',    // جلسات المستخدمين
+    results: 'user_results',      // نتائج المستخدمين (ربط مع الاختبارات)
+    favorites: 'user_favorites',  // الأسئلة المفضلة
+    notes: 'user_notes',         // ملاحظات المستخدم
+    activities: 'user_activities', // سجل النشاطات
+    
+    // الجداول التعليمية
+    grades: 'grades',            // الصفوف الدراسية
+    sections: 'sections',         // الأقسام
+    subjects: 'subjects',         // المواد
+    lessons: 'lessons',           // الدروس
+    sublessons: 'sublessons',     // الأقسام الفرعية
+    questions: 'questions',       // الأسئلة
+    quizResults: 'quiz_results',  // نتائج الاختبارات
+    ads: 'ads'                    // الإعلانات
+};
+
+// =============================================
 // متغيرات التطبيق
+// =============================================
 let currentQuestionIndex = 0;
 let score = 0;
 let questions = [];
 let userAnswers = [];
 let clickCount = 0;
-let adminPassword = localStorage.getItem('adminPassword') || "gohary01010081147mo";
 let categories = new Set();
 let quizStartTime;
 let timerInterval;
-let selectedYear = '';
+let selectedGrade = '';
 let selectedSection = '';
 let selectedSubject = '';
 let selectedLesson = '';
 let selectedSublesson = '';
-let subjects = [];
+let grades = [];
 let sections = [];
+let subjects = [];
 let lessons = [];
 let sublessons = [];
 let examActive = true;
 let defaultExamTime = 10;
 let currentUser = null;
+let currentUserProfile = null;
 let savedState = JSON.parse(localStorage.getItem('quizState')) || {};
 let currentEditingQuestionId = null;
 let currentAd = JSON.parse(localStorage.getItem('currentAd')) || null;
 let autoBackupEnabled = localStorage.getItem('autoBackupEnabled') !== 'false';
-let userStats = JSON.parse(localStorage.getItem('userStats')) || {
+let users = [];
+let admins = [];
+
+// إحصائيات الموقع
+let siteStats = JSON.parse(localStorage.getItem('siteStats')) || {
     totalVisits: 0,
-    uniqueUsers: new Set(),
-    dailyActiveUsers: new Set(),
+    uniqueUsers: [],
+    dailyActiveUsers: [],
     userSessions: [],
-    activeUsers: new Set(),
-    permanentUsers: new Set(),
-    userActivities: []
+    userActivities: [],
+    quizResults: []
 };
 
 // متغير Dark Mode
 let isDarkMode = localStorage.getItem('darkMode') === 'true';
 
+// المشرف الافتراضي
+const defaultAdmin = {
+    id: 'default_admin',
+    name: 'مدير النظام',
+    email: 'admin@system.com',
+    password: 'admin123',
+    role: 'super_admin',
+    createdAt: new Date().toISOString()
+};
+
+// =============================================
 // عناصر DOM
+// =============================================
 const elements = {
     quizContainer: document.getElementById('quiz-container'),
     questionContainer: document.getElementById('question-container'),
@@ -72,26 +114,21 @@ const elements = {
     logoContainer: document.getElementById('logo-container'),
     adminPanel: document.getElementById('admin-panel'),
     closeAdmin: document.getElementById('close-admin'),
-    passwordModal: document.getElementById('password-modal'),
-    passwordInput: document.getElementById('admin-password'),
-    passwordSubmit: document.getElementById('password-submit'),
-    passwordCancel: document.getElementById('password-cancel'),
-    passwordError: document.getElementById('password-error'),
+    overlay: document.getElementById('overlay'),
     quizLoading: document.getElementById('quiz-loading'),
     categoryFilter: document.getElementById('category-filter'),
     categorySelect: document.getElementById('category-select'),
     timerDisplay: document.getElementById('timer'),
-    overlay: document.getElementById('overlay'),
-    yearSelectionContainer: document.getElementById('year-selection-container'),
+    gradeSelectionContainer: document.getElementById('grade-selection-container'),
     sectionSelectionContainer: document.getElementById('section-selection-container'),
     subjectSelectionContainer: document.getElementById('subject-selection-container'),
     lessonSelectionContainer: document.getElementById('lesson-selection-container'),
     sublessonSelectionContainer: document.getElementById('sublesson-selection-container'),
-    yearCards: document.querySelectorAll('.year-card'),
     backBtn: document.getElementById('back-btn'),
     adminNavItems: document.querySelectorAll('.admin-nav-item'),
     adminTabContents: document.querySelectorAll('.admin-tab-content'),
     adContainer: document.getElementById('ad-container'),
+    gradeContainer: document.getElementById('grade-container'),
     sectionContainer: document.getElementById('section-container'),
     subjectContainer: document.getElementById('subject-container'),
     lessonContainer: document.getElementById('lesson-container'),
@@ -103,36 +140,50 @@ const elements = {
     adAction: document.getElementById('ad-action'),
     themeToggle: document.getElementById('theme-toggle'),
     headerBackBtn: document.getElementById('header-back-btn'),
+    loginToggle: document.getElementById('login-toggle'),
+    loginModal: document.getElementById('login-modal'),
+    loginForm: document.getElementById('login-form'),
+    registerForm: document.getElementById('register-form'),
+    loginTabs: document.querySelectorAll('.login-tab'),
+    loginEmail: document.getElementById('login-email'),
+    loginPassword: document.getElementById('login-password'),
+    loginBtn: document.getElementById('login-btn'),
+    loginError: document.getElementById('login-error'),
+    registerName: document.getElementById('register-name'),
+    registerEmail: document.getElementById('register-email'),
+    registerPassword: document.getElementById('register-password'),
+    registerConfirm: document.getElementById('register-confirm-password'),
+    registerBtn: document.getElementById('register-btn'),
+    registerError: document.getElementById('register-error'),
+    rememberMe: document.getElementById('remember-me'),
+    userMenu: document.getElementById('user-menu'),
+    userAvatar: document.getElementById('user-avatar'),
+    userNameDisplay: document.getElementById('user-name-display'),
+    userEmailDisplay: document.getElementById('user-email-display'),
+    logoutBtn: document.getElementById('logout-btn'),
     
     // عناصر لوحة الإدارة
     questionType: document.getElementById('question-type'),
     mcqOptions: document.getElementById('mcq-options'),
     truefalseOptions: document.getElementById('truefalse-options'),
     addQuestionBtn: document.getElementById('add-question-btn'),
-    questionsList: document.getElementById('questions-list'),
-    filterYear: document.getElementById('filter-year'),
+    allQuestionsList: document.getElementById('all-questions-list'),
+    filterGrade: document.getElementById('filter-grade'),
     filterSection: document.getElementById('filter-section'),
     filterSubject: document.getElementById('filter-subject'),
     filterType: document.getElementById('filter-type'),
-    allQuestionsList: document.getElementById('all-questions-list'),
     examTime: document.getElementById('exam-time'),
     examStatus: document.getElementById('exam-status'),
-    adminPasswordSetting: document.getElementById('admin-password-setting'),
     saveSettingsBtn: document.getElementById('save-settings-btn'),
-    totalQuestions: document.getElementById('total-questions'),
-    totalQuizzes: document.getElementById('total-quizzes'),
-    avgScore: document.getElementById('avg-score'),
-    activeUsers: document.getElementById('active-users'),
-    recentResults: document.getElementById('recent-results'),
     newSectionName: document.getElementById('new-section-name'),
     newSectionDescription: document.getElementById('new-section-description'),
-    newSectionIcon: document.getElementById('new-section-icon'),
+    newSectionOrder: document.getElementById('new-section-order'),
     addSectionBtn: document.getElementById('add-section-btn'),
     sectionsList: document.getElementById('sections-list'),
     newSubjectName: document.getElementById('new-subject-name'),
     newSubjectDescription: document.getElementById('new-subject-description'),
     newSubjectSection: document.getElementById('new-subject-section'),
-    newSubjectIcon: document.getElementById('new-subject-icon'),
+    newSubjectOrder: document.getElementById('new-subject-order'),
     addSubjectBtn: document.getElementById('add-subject-btn'),
     subjectsList: document.getElementById('subjects-list'),
     questionSection: document.getElementById('question-section'),
@@ -142,14 +193,12 @@ const elements = {
     newLessonName: document.getElementById('new-lesson-name'),
     newLessonDescription: document.getElementById('new-lesson-description'),
     newLessonSubject: document.getElementById('new-lesson-subject'),
-    newLessonIcon: document.getElementById('new-lesson-icon'),
     newLessonOrder: document.getElementById('new-lesson-order'),
     addLessonBtn: document.getElementById('add-lesson-btn'),
     lessonsList: document.getElementById('lessons-list'),
     newSublessonName: document.getElementById('new-sublesson-name'),
     newSublessonDescription: document.getElementById('new-sublesson-description'),
     newSublessonLesson: document.getElementById('new-sublesson-lesson'),
-    newSublessonIcon: document.getElementById('new-sublesson-icon'),
     newSublessonOrder: document.getElementById('new-sublesson-order'),
     addSublessonBtn: document.getElementById('add-sublesson-btn'),
     sublessonsList: document.getElementById('sublessons-list'),
@@ -166,16 +215,54 @@ const elements = {
     backupFile: document.getElementById('backup-file'),
     restoreBackupBtn: document.getElementById('restore-backup-btn'),
     lastBackupInfo: document.getElementById('last-backup-info'),
-    questionYear: document.getElementById('question-year'),
+    questionGrade: document.getElementById('question-grade'),
     
-    // عناصر إحصائيات المستخدمين
-    totalUsersCount: document.getElementById('total-users-count'),
-    activeUsersCount: document.getElementById('active-users-count'),
-    dailyActiveCount: document.getElementById('daily-active-count'),
-    avgSessionCount: document.getElementById('avg-session-count'),
-    userActivityChart: document.getElementById('user-activity-chart'),
-    userActivityList: document.getElementById('user-activity-list')
+    // عناصر إدارة المشرفين
+    newAdminName: document.getElementById('new-admin-name'),
+    newAdminEmail: document.getElementById('new-admin-email'),
+    newAdminPassword: document.getElementById('new-admin-password'),
+    newAdminRole: document.getElementById('new-admin-role'),
+    addAdminBtn: document.getElementById('add-admin-btn'),
+    adminsList: document.getElementById('admins-list'),
+    
+    // عناصر إدارة الصفوف
+    newGradeName: document.getElementById('new-grade-name'),
+    newGradeDescription: document.getElementById('new-grade-description'),
+    newGradeIcon: document.getElementById('new-grade-icon'),
+    newGradeBgStyle: document.getElementById('new-grade-bg-style'),
+    newGradeBorderRadius: document.getElementById('new-grade-border-radius'),
+    newGradeShadow: document.getElementById('new-grade-shadow'),
+    newGradeBorder: document.getElementById('new-grade-border'),
+    newGradeHoverEffect: document.getElementById('new-grade-hover-effect'),
+    newGradePadding: document.getElementById('new-grade-padding'),
+    newGradeAnimation: document.getElementById('new-grade-animation'),
+    newGradeTextColor: document.getElementById('new-grade-text-color'),
+    newGradeIconColor: document.getElementById('new-grade-icon-color'),
+    newGradeOrder: document.getElementById('new-grade-order'),
+    addGradeBtn: document.getElementById('add-grade-btn'),
+    gradesList: document.getElementById('grades-list'),
+    
+    // عناصر إحصائيات الموقع
+    totalVisits: document.getElementById('total-visits'),
+    uniqueUsers: document.getElementById('unique-users'),
+    dailyActive: document.getElementById('daily-active'),
+    avgSession: document.getElementById('avg-session'),
+    totalQuestionsStats: document.getElementById('total-questions-stats'),
+    totalQuizzesStats: document.getElementById('total-quizzes-stats'),
+    avgScorePercent: document.getElementById('avg-score-percent'),
+    maxScore: document.getElementById('max-score'),
+    minScore: document.getElementById('min-score'),
+    activitiesList: document.getElementById('activities-list'),
+    topUsersList: document.getElementById('top-users-list'),
+    visitsChart: document.getElementById('visits-chart'),
+    gradesChart: document.getElementById('grades-chart'),
+    subjectsChart: document.getElementById('subjects-chart'),
+    resultsChart: document.getElementById('results-chart')
 };
+
+// =============================================
+// دوال التهيئة الأساسية
+// =============================================
 
 // تهيئة التطبيق
 function initApp() {
@@ -189,13 +276,22 @@ function initApp() {
             }
         }
         
+        // تحميل البيانات أولاً
+        Promise.all([loadAdmins(), loadUsers()]).then(() => {
+            // ثم التحقق من المستخدم
+            checkLoggedInUser();
+        }).catch(error => {
+            console.error('خطأ في تحميل البيانات:', error);
+            checkLoggedInUser();
+        });
+        
         setupEventListeners();
         loadInitialData();
         checkExamStatus();
         restoreSavedState();
         loadAd();
         
-        elements.yearSelectionContainer.style.display = 'grid';
+        elements.gradeSelectionContainer.style.display = 'block';
         
         window.addEventListener('beforeunload', saveCurrentState);
         window.addEventListener('popstate', handleBrowserBack);
@@ -223,27 +319,35 @@ function trackUserVisit() {
             page: window.location.href
         };
         
-        userStats.totalVisits++;
-        userStats.uniqueUsers.add(userId);
+        siteStats.totalVisits = (siteStats.totalVisits || 0) + 1;
+        
+        if (!siteStats.uniqueUsers) siteStats.uniqueUsers = [];
+        if (!siteStats.uniqueUsers.includes(userId)) {
+            siteStats.uniqueUsers.push(userId);
+        }
         
         const today = new Date().toDateString();
         const userKey = `${userId}_${today}`;
-        userStats.dailyActiveUsers.add(userKey);
         
-        userStats.activeUsers.add(userId);
-        
-        userStats.userActivities.push(session);
-        
-        if (userStats.userActivities.length > 100) {
-            userStats.userActivities = userStats.userActivities.slice(-100);
+        if (!siteStats.dailyActiveUsers) siteStats.dailyActiveUsers = [];
+        if (!siteStats.dailyActiveUsers.includes(userKey)) {
+            siteStats.dailyActiveUsers.push(userKey);
         }
         
-        const userSessions = userStats.userSessions.find(s => s.userId === userId);
+        if (!siteStats.userActivities) siteStats.userActivities = [];
+        siteStats.userActivities.push(session);
+        
+        if (siteStats.userActivities.length > 100) {
+            siteStats.userActivities = siteStats.userActivities.slice(-100);
+        }
+        
+        const userSessions = siteStats.userSessions?.find(s => s.userId === userId);
         if (userSessions) {
             userSessions.count++;
             userSessions.lastVisit = new Date().toISOString();
         } else {
-            userStats.userSessions.push({
+            if (!siteStats.userSessions) siteStats.userSessions = [];
+            siteStats.userSessions.push({
                 userId: userId,
                 count: 1,
                 firstVisit: new Date().toISOString(),
@@ -251,56 +355,38 @@ function trackUserVisit() {
             });
         }
         
-        saveUserStats();
+        saveSiteStats();
         saveUserActivityToFirebase(session);
     } catch (error) {
         console.error('خطأ في تتبع دخول المستخدم:', error);
     }
 }
 
-// حفظ إحصائيات المستخدمين
-function saveUserStats() {
+// حفظ إحصائيات الموقع
+function saveSiteStats() {
     try {
-        const statsToSave = {
-            totalVisits: userStats.totalVisits,
-            uniqueUsers: Array.from(userStats.uniqueUsers),
-            dailyActiveUsers: Array.from(userStats.dailyActiveUsers),
-            userSessions: userStats.userSessions,
-            activeUsers: Array.from(userStats.activeUsers),
-            permanentUsers: Array.from(userStats.permanentUsers),
-            userActivities: userStats.userActivities
-        };
-        
-        localStorage.setItem('userStats', JSON.stringify(statsToSave));
+        localStorage.setItem('siteStats', JSON.stringify(siteStats));
     } catch (error) {
-        console.error('خطأ في حفظ إحصائيات المستخدمين:', error);
+        console.error('خطأ في حفظ إحصائيات الموقع:', error);
     }
 }
 
-// تحميل إحصائيات المستخدمين
-function loadUserStats() {
+// تحميل إحصائيات الموقع
+function loadSiteStats() {
     try {
-        const savedStats = JSON.parse(localStorage.getItem('userStats'));
+        const savedStats = JSON.parse(localStorage.getItem('siteStats'));
         if (savedStats) {
-            userStats = {
-                totalVisits: savedStats.totalVisits || 0,
-                uniqueUsers: new Set(savedStats.uniqueUsers || []),
-                dailyActiveUsers: new Set(savedStats.dailyActiveUsers || []),
-                userSessions: savedStats.userSessions || [],
-                activeUsers: new Set(savedStats.activeUsers || []),
-                permanentUsers: new Set(savedStats.permanentUsers || []),
-                userActivities: savedStats.userActivities || []
-            };
+            siteStats = savedStats;
         }
     } catch (error) {
-        console.error('خطأ في تحميل إحصائيات المستخدمين:', error);
+        console.error('خطأ في تحميل إحصائيات الموقع:', error);
     }
 }
 
 // حفظ نشاط المستخدم في Firebase
 function saveUserActivityToFirebase(session) {
     try {
-        const userActivityRef = database.ref('userActivities');
+        const userActivityRef = database.ref(DB.activities);
         userActivityRef.push(session)
             .catch(error => {
                 console.error('Error saving user activity:', error);
@@ -309,6 +395,750 @@ function saveUserActivityToFirebase(session) {
         console.error('خطأ في حفظ نشاط المستخدم:', error);
     }
 }
+
+// تحميل المستخدمين من Firebase مع العلاقات
+function loadUsers() {
+    return new Promise((resolve) => {
+        try {
+            const usersRef = database.ref(DB.users);
+            usersRef.once('value', (snapshot) => {
+                users = [];
+                if (snapshot.exists()) {
+                    snapshot.forEach((childSnapshot) => {
+                        const user = childSnapshot.val();
+                        user.id = childSnapshot.key;
+                        users.push(user);
+                    });
+                }
+                console.log('تم تحميل المستخدمين:', users.length);
+                resolve(users);
+            }, (error) => {
+                console.error('خطأ في تحميل المستخدمين:', error);
+                resolve([]);
+            });
+        } catch (error) {
+            console.error('خطأ في دالة تحميل المستخدمين:', error);
+            resolve([]);
+        }
+    });
+}
+
+// تحميل المشرفين من Firebase
+function loadAdmins() {
+    return new Promise((resolve) => {
+        try {
+            const adminsRef = database.ref(DB.admins);
+            adminsRef.once('value', (snapshot) => {
+                admins = [];
+                
+                if (!snapshot.exists() || snapshot.numChildren() === 0) {
+                    // إضافة المشرف الافتراضي
+                    console.log('لا يوجد مشرفين، جاري إضافة المشرف الافتراضي');
+                    const defaultAdminData = {
+                        name: defaultAdmin.name,
+                        email: defaultAdmin.email,
+                        password: defaultAdmin.password,
+                        role: defaultAdmin.role,
+                        createdAt: defaultAdmin.createdAt
+                    };
+                    
+                    adminsRef.child('default_admin').set(defaultAdminData)
+                        .then(() => {
+                            admins.push({
+                                id: 'default_admin',
+                                ...defaultAdminData
+                            });
+                            console.log('تم إضافة المشرف الافتراضي بنجاح');
+                            resolve(admins);
+                        })
+                        .catch(error => {
+                            console.error('خطأ في إضافة المشرف الافتراضي:', error);
+                            // في حالة الخطأ، نضيفه محلياً
+                            admins.push(defaultAdmin);
+                            resolve(admins);
+                        });
+                } else {
+                    snapshot.forEach((childSnapshot) => {
+                        const admin = childSnapshot.val();
+                        admin.id = childSnapshot.key;
+                        admins.push(admin);
+                    });
+                    console.log('تم تحميل المشرفين:', admins.length);
+                    resolve(admins);
+                }
+            }, (error) => {
+                console.error('خطأ في تحميل المشرفين:', error);
+                // في حالة الخطأ، نضيف المشرف الافتراضي محلياً
+                admins = [defaultAdmin];
+                resolve(admins);
+            });
+        } catch (error) {
+            console.error('خطأ في دالة تحميل المشرفين:', error);
+            admins = [defaultAdmin];
+            resolve(admins);
+        }
+    });
+}
+
+// تحميل ملف المستخدم (البيانات الإضافية)
+function loadUserProfile(userId) {
+    return new Promise((resolve) => {
+        try {
+            const profileRef = database.ref(`${DB.profiles}/${userId}`);
+            profileRef.once('value', (snapshot) => {
+                if (snapshot.exists()) {
+                    resolve(snapshot.val());
+                } else {
+                    resolve(null);
+                }
+            }, (error) => {
+                console.error('خطأ في تحميل ملف المستخدم:', error);
+                resolve(null);
+            });
+        } catch (error) {
+            console.error('خطأ في دالة تحميل ملف المستخدم:', error);
+            resolve(null);
+        }
+    });
+}
+
+// التحقق من المستخدم المسجل دخوله
+function checkLoggedInUser() {
+    try {
+        // التحقق من localStorage أولاً
+        const savedUser = localStorage.getItem('currentUser');
+        if (savedUser) {
+            currentUser = JSON.parse(savedUser);
+            console.log('تم استعادة المستخدم من localStorage:', currentUser);
+            
+            // تحميل ملف المستخدم الإضافي
+            loadUserProfile(currentUser.id).then(profile => {
+                currentUserProfile = profile;
+                updateUIForLoggedInUser();
+            });
+            
+            return;
+        }
+        
+        // التحقق من sessionStorage
+        const sessionUser = sessionStorage.getItem('currentUser');
+        if (sessionUser) {
+            currentUser = JSON.parse(sessionUser);
+            console.log('تم استعادة المستخدم من sessionStorage:', currentUser);
+            
+            // تحميل ملف المستخدم الإضافي
+            loadUserProfile(currentUser.id).then(profile => {
+                currentUserProfile = profile;
+                updateUIForLoggedInUser();
+            });
+            
+            return;
+        }
+        
+        console.log('لا يوجد مستخدم مسجل دخوله');
+    } catch (error) {
+        console.error('خطأ في التحقق من المستخدم:', error);
+    }
+}
+
+// دالة التحقق من كون المستخدم مشرفاً
+function checkIfUserIsAdmin(email) {
+    if (!email) return false;
+    
+    // تحقق من المشرفين المحملين
+    const isAdmin = admins.some(admin => admin.email === email);
+    console.log('التحقق من المشرف:', email, isAdmin, admins);
+    return isAdmin;
+}
+
+// تحديث الواجهة للمستخدم المسجل
+function updateUIForLoggedInUser() {
+    if (!currentUser) return;
+    
+    try {
+        elements.loginToggle.style.display = 'none';
+        elements.userMenu.style.display = 'block';
+        
+        if (elements.userNameDisplay) {
+            elements.userNameDisplay.textContent = currentUser.name || 'مستخدم';
+        }
+        if (elements.userEmailDisplay) {
+            elements.userEmailDisplay.textContent = currentUser.email || '';
+        }
+        
+        // التحقق إذا كان المستخدم مشرفاً
+        const isAdmin = checkIfUserIsAdmin(currentUser.email);
+        console.log('نتيجة التحقق من المشرف:', isAdmin);
+        
+        if (isAdmin) {
+            // إظهار زر الإدارة
+            if (elements.adminToggle) {
+                elements.adminToggle.style.display = 'flex';
+                console.log('تم إظهار زر الإدارة');
+            }
+            
+            // إضافة شارة المشرف
+            if (elements.userAvatar) {
+                // إزالة أي شارة موجودة أولاً
+                const oldBadge = elements.userAvatar.querySelector('.admin-badge');
+                if (oldBadge) oldBadge.remove();
+                
+                const adminBadge = document.createElement('span');
+                adminBadge.className = 'admin-badge';
+                adminBadge.innerHTML = '<i class="fas fa-crown"></i> مشرف';
+                elements.userAvatar.appendChild(adminBadge);
+                console.log('تم إضافة شارة المشرف');
+            }
+        } else {
+            // إخفاء زر الإدارة
+            if (elements.adminToggle) {
+                elements.adminToggle.style.display = 'none';
+            }
+            
+            // إزالة شارة المشرف إذا كانت موجودة
+            if (elements.userAvatar) {
+                const oldBadge = elements.userAvatar.querySelector('.admin-badge');
+                if (oldBadge) oldBadge.remove();
+            }
+        }
+    } catch (error) {
+        console.error('خطأ في تحديث الواجهة:', error);
+    }
+}
+
+// =============================================
+// دوال تسجيل الدخول والتسجيل المتكاملة مع العلاقات
+// =============================================
+
+// تسجيل الدخول
+function login(email, password, remember) {
+    try {
+        console.log('محاولة تسجيل الدخول:', email);
+        
+        // البحث في المشرفين أولاً
+        const admin = admins.find(a => a.email === email && a.password === password);
+        
+        if (admin) {
+            console.log('تم العثور على مشرف:', admin);
+            // مشرف
+            currentUser = {
+                id: admin.id,
+                name: admin.name,
+                email: admin.email,
+                role: admin.role,
+                isAdmin: true,
+                loginTime: new Date().toISOString()
+            };
+            
+            if (remember) {
+                localStorage.setItem('currentUser', JSON.stringify(currentUser));
+            } else {
+                sessionStorage.setItem('currentUser', JSON.stringify(currentUser));
+            }
+            
+            // تسجيل جلسة المستخدم
+            logUserSession(currentUser.id, 'login');
+            
+            elements.loginModal.style.display = 'none';
+            elements.overlay.classList.remove('active');
+            
+            // تحديث الواجهة
+            updateUIForLoggedInUser();
+            
+            showMessage(`مرحباً بك يا ${admin.name}`);
+            return true;
+        }
+        
+        // البحث في المستخدمين العاديين
+        const usersRef = database.ref(DB.users);
+        usersRef.once('value', (snapshot) => {
+            let userFound = false;
+            
+            if (snapshot.exists()) {
+                snapshot.forEach((childSnapshot) => {
+                    const user = childSnapshot.val();
+                    if (user.email === email && user.password === password) {
+                        userFound = true;
+                        currentUser = {
+                            id: childSnapshot.key,
+                            name: user.name,
+                            email: user.email,
+                            isAdmin: false,
+                            loginTime: new Date().toISOString()
+                        };
+                        
+                        if (remember) {
+                            localStorage.setItem('currentUser', JSON.stringify(currentUser));
+                        } else {
+                            sessionStorage.setItem('currentUser', JSON.stringify(currentUser));
+                        }
+                        
+                        // تسجيل جلسة المستخدم
+                        logUserSession(currentUser.id, 'login');
+                        
+                        // تحميل ملف المستخدم
+                        loadUserProfile(currentUser.id).then(profile => {
+                            currentUserProfile = profile;
+                        });
+                        
+                        elements.loginModal.style.display = 'none';
+                        elements.overlay.classList.remove('active');
+                        
+                        updateUIForLoggedInUser();
+                        showMessage(`مرحباً بك يا ${user.name}`);
+                    }
+                });
+            }
+            
+            if (!userFound) {
+                if (elements.loginError) {
+                    elements.loginError.style.display = 'block';
+                    elements.loginError.textContent = 'البريد الإلكتروني أو كلمة المرور غير صحيحة';
+                }
+            }
+        });
+    } catch (error) {
+        console.error('خطأ في تسجيل الدخول:', error);
+        if (elements.loginError) {
+            elements.loginError.style.display = 'block';
+            elements.loginError.textContent = 'حدث خطأ في تسجيل الدخول';
+        }
+    }
+}
+
+// تسجيل مستخدم جديد مع العلاقات الكاملة
+function register(name, email, password, confirmPassword) {
+    try {
+        if (password !== confirmPassword) {
+            if (elements.registerError) {
+                elements.registerError.style.display = 'block';
+                elements.registerError.textContent = 'كلمة المرور غير متطابقة';
+            }
+            return;
+        }
+        
+        if (password.length < 6) {
+            if (elements.registerError) {
+                elements.registerError.style.display = 'block';
+                elements.registerError.textContent = 'كلمة المرور يجب أن تكون 6 أحرف على الأقل';
+            }
+            return;
+        }
+        
+        // التحقق من عدم وجود البريد الإلكتروني مسبقاً
+        const usersRef = database.ref(DB.users);
+        usersRef.once('value', (snapshot) => {
+            let emailExists = false;
+            
+            if (snapshot.exists()) {
+                snapshot.forEach((childSnapshot) => {
+                    const user = childSnapshot.val();
+                    if (user.email === email) {
+                        emailExists = true;
+                    }
+                });
+            }
+            
+            // التحقق من المشرفين
+            const adminExists = admins.some(a => a.email === email);
+            
+            if (emailExists || adminExists) {
+                if (elements.registerError) {
+                    elements.registerError.style.display = 'block';
+                    elements.registerError.textContent = 'البريد الإلكتروني مستخدم بالفعل';
+                }
+                return;
+            }
+            
+            // إنشاء معرف المستخدم الجديد
+            const newUserId = 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            
+            // 1. إضافة المستخدم في جدول users (البيانات الأساسية)
+            const newUser = {
+                name: name,
+                email: email,
+                password: password,
+                createdAt: new Date().toISOString(),
+                status: 'active',
+                lastLogin: null
+            };
+            
+            usersRef.child(newUserId).set(newUser)
+                .then(() => {
+                    console.log('تم إضافة المستخدم في جدول users');
+                    
+                    // 2. إنشاء ملف المستخدم (user_profile) - بيانات إضافية
+                    const userProfile = {
+                        userId: newUserId,
+                        fullName: name,
+                        email: email,
+                        bio: '',
+                        avatar: '',
+                        phone: '',
+                        birthDate: '',
+                        country: '',
+                        education: '',
+                        interests: [],
+                        stats: {
+                            totalQuizzes: 0,
+                            averageScore: 0,
+                            totalTime: 0,
+                            bestScore: 0,
+                            lastQuizDate: null
+                        },
+                        settings: {
+                            emailNotifications: true,
+                            darkMode: isDarkMode,
+                            language: 'ar',
+                            fontSize: 'medium'
+                        },
+                        createdAt: new Date().toISOString(),
+                        updatedAt: new Date().toISOString()
+                    };
+                    
+                    const profileRef = database.ref(`${DB.profiles}/${newUserId}`);
+                    
+                    // 3. إنشاء إحصائيات المستخدم
+                    const userStats = {
+                        userId: newUserId,
+                        totalVisits: 1,
+                        totalQuizzes: 0,
+                        totalCorrect: 0,
+                        totalWrong: 0,
+                        totalTime: 0,
+                        achievements: [],
+                        rank: 'newbie',
+                        points: 0,
+                        level: 1,
+                        lastActive: new Date().toISOString()
+                    };
+                    
+                    const statsRef = database.ref(`${DB.sessions}/${newUserId}/stats`);
+                    
+                    // تنفيذ جميع العمليات معاً
+                    Promise.all([
+                        profileRef.set(userProfile),
+                        statsRef.set(userStats),
+                        logUserSession(newUserId, 'register')
+                    ]).then(() => {
+                        console.log('تم إنشاء جميع بيانات المستخدم بنجاح');
+                        
+                        // تسجيل الدخول تلقائياً بعد التسجيل
+                        currentUser = {
+                            id: newUserId,
+                            name: name,
+                            email: email,
+                            isAdmin: false,
+                            registerDate: new Date().toISOString()
+                        };
+                        
+                        localStorage.setItem('currentUser', JSON.stringify(currentUser));
+                        currentUserProfile = userProfile;
+                        
+                        elements.loginModal.style.display = 'none';
+                        elements.overlay.classList.remove('active');
+                        
+                        updateUIForLoggedInUser();
+                        showMessage('تم التسجيل بنجاح! مرحباً بك في المنصة');
+                        
+                        // إعادة تحميل المستخدمين
+                        loadUsers();
+                        
+                        // إضافة نشاط التسجيل
+                        addUserActivity(newUserId, 'register', 'قام بتسجيل حساب جديد');
+                        
+                    }).catch(error => {
+                        console.error('خطأ في إنشاء بيانات المستخدم الإضافية:', error);
+                        // في حالة فشل إنشاء البيانات الإضافية، نحذف المستخدم الأساسي
+                        usersRef.child(newUserId).remove();
+                        
+                        if (elements.registerError) {
+                            elements.registerError.style.display = 'block';
+                            elements.registerError.textContent = 'حدث خطأ في إنشاء الحساب';
+                        }
+                    });
+                    
+                })
+                .catch(error => {
+                    console.error('خطأ في إضافة المستخدم:', error);
+                    if (elements.registerError) {
+                        elements.registerError.style.display = 'block';
+                        elements.registerError.textContent = 'حدث خطأ في التسجيل';
+                    }
+                });
+        });
+    } catch (error) {
+        console.error('خطأ في تسجيل مستخدم جديد:', error);
+        if (elements.registerError) {
+            elements.registerError.style.display = 'block';
+            elements.registerError.textContent = 'حدث خطأ في التسجيل';
+        }
+    }
+}
+
+// تسجيل جلسة المستخدم
+function logUserSession(userId, action) {
+    try {
+        const sessionRef = database.ref(`${DB.sessions}/${userId}`);
+        const sessionId = sessionRef.push().key;
+        
+        const sessionData = {
+            sessionId: sessionId,
+            userId: userId,
+            action: action,
+            timestamp: new Date().toISOString(),
+            ip: '', // يمكن إضافة IP إذا كان متاحاً
+            userAgent: navigator.userAgent
+        };
+        
+        sessionRef.child(sessionId).set(sessionData);
+        
+        // تحديث آخر نشاط للمستخدم
+        const profileRef = database.ref(`${DB.profiles}/${userId}`);
+        profileRef.child('lastActive').set(new Date().toISOString());
+        
+        // تحديث إحصائيات الزيارات
+        const statsRef = database.ref(`${DB.sessions}/${userId}/stats`);
+        statsRef.child('lastVisit').set(new Date().toISOString());
+        statsRef.child('visitCount').transaction(current => (current || 0) + 1);
+        
+    } catch (error) {
+        console.error('خطأ في تسجيل جلسة المستخدم:', error);
+    }
+}
+
+// إضافة نشاط للمستخدم
+function addUserActivity(userId, type, description, data = {}) {
+    try {
+        const activityRef = database.ref(`${DB.activities}/${userId}`);
+        const activityId = activityRef.push().key;
+        
+        const activityData = {
+            activityId: activityId,
+            userId: userId,
+            type: type,
+            description: description,
+            data: data,
+            timestamp: new Date().toISOString()
+        };
+        
+        activityRef.child(activityId).set(activityData);
+        
+        // الاحتفاظ بآخر 50 نشاط فقط
+        activityRef.limitToLast(50).once('value', (snapshot) => {
+            if (snapshot.numChildren() > 50) {
+                const firstChild = Object.keys(snapshot.val())[0];
+                activityRef.child(firstChild).remove();
+            }
+        });
+        
+    } catch (error) {
+        console.error('خطأ في إضافة نشاط المستخدم:', error);
+    }
+}
+
+// تسجيل الخروج
+function logout() {
+    try {
+        if (currentUser) {
+            // تسجيل جلسة الخروج
+            logUserSession(currentUser.id, 'logout');
+        }
+        
+        currentUser = null;
+        currentUserProfile = null;
+        localStorage.removeItem('currentUser');
+        sessionStorage.removeItem('currentUser');
+        
+        elements.loginToggle.style.display = 'flex';
+        elements.userMenu.style.display = 'none';
+        
+        if (elements.adminToggle) {
+            elements.adminToggle.style.display = 'none';
+        }
+        
+        // إزالة شارة المشرف
+        if (elements.userAvatar) {
+            const adminBadge = elements.userAvatar.querySelector('.admin-badge');
+            if (adminBadge) {
+                adminBadge.remove();
+            }
+        }
+        
+        // إغلاق لوحة الإدارة إذا كانت مفتوحة
+        if (elements.adminPanel.classList.contains('active')) {
+            elements.adminPanel.classList.remove('active');
+            elements.overlay.classList.remove('active');
+        }
+        
+        showMessage('تم تسجيل الخروج بنجاح');
+    } catch (error) {
+        console.error('خطأ في تسجيل الخروج:', error);
+    }
+}
+
+// عرض رسالة نجاح
+function showMessage(message) {
+    try {
+        // يمكنك تخصيص هذه الدالة لعرض رسالة جميلة
+        alert(message);
+    } catch (error) {
+        console.error('خطأ في عرض الرسالة:', error);
+    }
+}
+
+// =============================================
+// دوال إدارة المشرفين
+// =============================================
+
+// إضافة مشرف جديد
+function addNewAdmin() {
+    try {
+        const name = elements.newAdminName?.value.trim();
+        const email = elements.newAdminEmail?.value.trim();
+        const password = elements.newAdminPassword?.value.trim();
+        const role = elements.newAdminRole?.value;
+        
+        if (!name || !email || !password) {
+            alert('الرجاء إدخال جميع البيانات');
+            return;
+        }
+        
+        // التحقق من عدم وجود البريد الإلكتروني مسبقاً
+        const emailExists = admins.some(a => a.email === email) || 
+                           users.some(u => u.email === email);
+        
+        if (emailExists) {
+            alert('البريد الإلكتروني مستخدم بالفعل');
+            return;
+        }
+        
+        const adminsRef = database.ref(DB.admins);
+        const newAdminRef = adminsRef.push();
+        
+        const adminData = {
+            name: name,
+            email: email,
+            password: password,
+            role: role,
+            createdAt: new Date().toISOString()
+        };
+        
+        newAdminRef.set(adminData)
+            .then(() => {
+                alert('تم إضافة المشرف بنجاح');
+                
+                elements.newAdminName.value = '';
+                elements.newAdminEmail.value = '';
+                elements.newAdminPassword.value = '';
+                
+                loadAdmins().then(() => {
+                    loadAdminsForAdmin();
+                });
+            })
+            .catch(error => {
+                alert('حدث خطأ في إضافة المشرف: ' + error.message);
+            });
+    } catch (error) {
+        console.error('خطأ في إضافة مشرف:', error);
+        alert('حدث خطأ في إضافة المشرف');
+    }
+}
+
+// تحميل قائمة المشرفين في لوحة الإدارة
+function loadAdminsForAdmin() {
+    try {
+        const adminsList = elements.adminsList;
+        if (!adminsList) return;
+        
+        adminsList.innerHTML = '';
+        
+        if (admins.length > 0) {
+            admins.sort((a, b) => a.createdAt?.localeCompare(b.createdAt) || 0);
+            
+            admins.forEach(admin => {
+                const adminItem = document.createElement('div');
+                adminItem.className = 'item-card';
+                
+                const roleText = 
+                    admin.role === 'super_admin' ? 'مدير عام' :
+                    admin.role === 'admin' ? 'مشرف' : 'محرر';
+                
+                const roleClass = 
+                    admin.role === 'super_admin' ? 'gradient-danger' :
+                    admin.role === 'admin' ? 'gradient-warning' : 'gradient-info';
+                
+                adminItem.innerHTML = `
+                    <h4>
+                        <i class="fas fa-user-shield ${roleClass}"></i>
+                        ${admin.name}
+                        ${admin.id === 'default_admin' ? '<span class="admin-badge" style="position: relative; top: 0; right: 0; margin-right: 10px;">افتراضي</span>' : ''}
+                    </h4>
+                    <div class="item-meta">
+                        <span><i class="fas fa-envelope"></i> ${admin.email}</span>
+                        <span><i class="fas fa-tag"></i> ${roleText}</span>
+                    </div>
+                    <div class="item-actions">
+                        ${admin.id !== 'default_admin' ? `
+                            <button class="btn-admin btn-admin-danger btn-sm" onclick="deleteAdmin('${admin.id}')">
+                                <i class="fas fa-trash"></i> حذف
+                            </button>
+                        ` : ''}
+                    </div>
+                `;
+                
+                adminsList.appendChild(adminItem);
+            });
+        } else {
+            adminsList.innerHTML = `
+                <div class="no-questions">
+                    <i class="fas fa-info-circle"></i>
+                    <h3>لا يوجد مشرفين</h3>
+                    <p>أضف مشرفين جدد من النموذج أعلاه.</p>
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('خطأ في تحميل المشرفين:', error);
+    }
+}
+
+// حذف مشرف
+function deleteAdmin(adminId) {
+    try {
+        if (adminId === 'default_admin') {
+            alert('لا يمكن حذف المشرف الافتراضي');
+            return;
+        }
+        
+        if (confirm('هل أنت متأكد من حذف هذا المشرف؟')) {
+            database.ref(DB.admins + '/' + adminId).remove()
+                .then(() => {
+                    alert('تم حذف المشرف بنجاح');
+                    loadAdmins().then(() => {
+                        loadAdminsForAdmin();
+                        // تحديث واجهة المستخدم الحالي إذا كان هو المحذوف
+                        if (currentUser && admins.some(a => a.email === currentUser.email)) {
+                            // المستخدم الحالي لا يزال مشرفاً
+                        } else if (currentUser && currentUser.email) {
+                            // المستخدم الحالي لم يعد مشرفاً
+                            updateUIForLoggedInUser();
+                        }
+                    });
+                })
+                .catch(error => {
+                    alert('حدث خطأ في حذف المشرف: ' + error.message);
+                });
+        }
+    } catch (error) {
+        console.error('خطأ في حذف المشرف:', error);
+        alert('حدث خطأ في حذف المشرف');
+    }
+}
+
+// =============================================
+// دوال التنقل والرجوع
+// =============================================
 
 // دالة التعامل مع زر الرجوع في المتصفح
 function handleBrowserBack(event) {
@@ -343,12 +1173,15 @@ function goBack() {
                 elements.sectionSelectionContainer.style.display = 'block';
                 elements.headerBackBtn.style.display = 'flex';
                 selectedSubject = '';
-            } else {
+            } else if (selectedGrade) {
                 elements.sectionSelectionContainer.style.display = 'none';
-                elements.yearSelectionContainer.style.display = 'grid';
+                elements.gradeSelectionContainer.style.display = 'block';
                 elements.backBtn.style.display = 'none';
                 elements.headerBackBtn.style.display = 'none';
                 selectedSection = '';
+            } else {
+                elements.gradeSelectionContainer.style.display = 'block';
+                elements.headerBackBtn.style.display = 'none';
             }
         } else if (elements.sublessonSelectionContainer.style.display === 'block') {
             elements.sublessonSelectionContainer.style.display = 'none';
@@ -367,7 +1200,7 @@ function goBack() {
             selectedSubject = '';
         } else if (elements.sectionSelectionContainer.style.display === 'block') {
             elements.sectionSelectionContainer.style.display = 'none';
-            elements.yearSelectionContainer.style.display = 'grid';
+            elements.gradeSelectionContainer.style.display = 'block';
             elements.backBtn.style.display = 'none';
             elements.headerBackBtn.style.display = 'none';
             selectedSection = '';
@@ -380,14 +1213,19 @@ function goBack() {
     }
 }
 
+// =============================================
+// دوال تحميل البيانات
+// =============================================
+
 // تحميل البيانات الأولية
 function loadInitialData() {
     try {
+        loadGrades();
         loadSections();
         loadSubjects();
         loadLessons();
         loadSublessons();
-        loadUserStats();
+        loadSiteStats();
         updateLastBackupInfo();
         loadAutoBackupSetting();
     } catch (error) {
@@ -395,10 +1233,112 @@ function loadInitialData() {
     }
 }
 
+// تحميل الصفوف من قاعدة البيانات
+function loadGrades() {
+    try {
+        const gradesRef = database.ref(DB.grades);
+        gradesRef.on('value', (snapshot) => {
+            grades = [];
+            snapshot.forEach((childSnapshot) => {
+                const grade = childSnapshot.val();
+                grade.id = childSnapshot.key;
+                grades.push(grade);
+            });
+            
+            grades.sort((a, b) => (a.order || 999) - (b.order || 999));
+            
+            updateGradeDropdowns();
+            loadGradesForDisplay();
+            loadGradesForAdmin();
+        }, (error) => {
+            console.error('خطأ في تحميل الصفوف:', error);
+        });
+    } catch (error) {
+        console.error('خطأ في دالة تحميل الصفوف:', error);
+    }
+}
+
+// عرض الصفوف في الواجهة الرئيسية مع تطبيق التصميم
+function loadGradesForDisplay() {
+    try {
+        const gradeContainer = document.getElementById('grade-container');
+        if (!gradeContainer) return;
+        
+        gradeContainer.innerHTML = '';
+        
+        if (grades.length > 0) {
+            grades.sort((a, b) => (a.order || 999) - (b.order || 999));
+            
+            grades.forEach(grade => {
+                const gradeCard = document.createElement('div');
+                
+                // تجميع كلاسات التصميم
+                const designClasses = [
+                    'grade-card',
+                    grade.borderRadius || 'radius-soft',
+                    grade.shadow || 'shadow-soft',
+                    grade.border || 'border-light',
+                    grade.hoverEffect || 'hover-scale',
+                    grade.padding || 'normal',
+                    grade.animation || 'anim-fade',
+                    grade.bgStyle || 'gradient-primary'
+                ].join(' ');
+                
+                gradeCard.className = designClasses;
+                gradeCard.dataset.grade = grade.id;
+                
+                // لون النص والأيقونة
+                const textColorClass = grade.textColor || 'text-white';
+                const iconColorClass = grade.iconColor || 'icon-white';
+                
+                gradeCard.innerHTML = `
+                    <i class="fas ${grade.icon || 'fa-graduation-cap'} ${iconColorClass}"></i>
+                    <h3 class="${textColorClass}">${grade.name}</h3>
+                    <p class="${textColorClass}">${grade.description || ''}</p>
+                `;
+                
+                gradeCard.addEventListener('click', function() {
+                    try {
+                        document.querySelectorAll('.grade-card').forEach(c => c.classList.remove('selected'));
+                        this.classList.add('selected');
+                        selectedGrade = this.dataset.grade;
+                        
+                        const gradeName = grades.find(g => g.id === selectedGrade)?.name || '';
+                        elements.quizTitle.textContent = `اختبار - ${gradeName}`;
+                        
+                        elements.gradeSelectionContainer.style.display = 'none';
+                        elements.sectionSelectionContainer.style.display = 'block';
+                        elements.backBtn.style.display = 'flex';
+                        elements.headerBackBtn.style.display = 'flex';
+                        
+                        loadSectionsForGrade(selectedGrade);
+                        saveCurrentState();
+                    } catch (error) {
+                        console.error('خطأ في اختيار الصف:', error);
+                        showError('حدث خطأ في اختيار الصف');
+                    }
+                });
+                
+                gradeContainer.appendChild(gradeCard);
+            });
+        } else {
+            gradeContainer.innerHTML = `
+                <div class="no-questions" style="grid-column: 1 / -1;">
+                    <i class="fas fa-info-circle"></i>
+                    <h3>لا توجد صفوف دراسية متاحة</h3>
+                    <p>سيتم إضافة الصفوف قريباً من قبل الإدارة.</p>
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('خطأ في عرض الصفوف:', error);
+    }
+}
+
 // تحميل الأقسام
 function loadSections() {
     try {
-        const sectionsRef = database.ref('sections');
+        const sectionsRef = database.ref(DB.sections);
         sectionsRef.on('value', (snapshot) => {
             sections = [];
             snapshot.forEach((childSnapshot) => {
@@ -407,7 +1347,10 @@ function loadSections() {
                 sections.push(section);
             });
             
+            sections.sort((a, b) => (a.order || 999) - (b.order || 999));
+            
             updateSectionDropdowns();
+            loadSectionsForAdmin();
         }, (error) => {
             console.error('خطأ في تحميل الأقسام:', error);
         });
@@ -419,7 +1362,7 @@ function loadSections() {
 // تحميل المواد
 function loadSubjects() {
     try {
-        const subjectsRef = database.ref('subjects');
+        const subjectsRef = database.ref(DB.subjects);
         subjectsRef.on('value', (snapshot) => {
             subjects = [];
             snapshot.forEach((childSnapshot) => {
@@ -428,7 +1371,10 @@ function loadSubjects() {
                 subjects.push(subject);
             });
             
+            subjects.sort((a, b) => (a.order || 999) - (b.order || 999));
+            
             updateSubjectDropdowns();
+            loadSubjectsForAdmin();
         }, (error) => {
             console.error('خطأ في تحميل المواد:', error);
         });
@@ -440,7 +1386,7 @@ function loadSubjects() {
 // تحميل الدروس
 function loadLessons() {
     try {
-        const lessonsRef = database.ref('lessons');
+        const lessonsRef = database.ref(DB.lessons);
         lessonsRef.on('value', (snapshot) => {
             lessons = [];
             snapshot.forEach((childSnapshot) => {
@@ -449,8 +1395,11 @@ function loadLessons() {
                 lessons.push(lesson);
             });
             
+            lessons.sort((a, b) => (a.order || 999) - (b.order || 999));
+            
             updateLessonDropdowns();
             updateLessonDropdownsForSublessons();
+            loadLessonsForAdmin();
         }, (error) => {
             console.error('خطأ في تحميل الدروس:', error);
         });
@@ -462,7 +1411,7 @@ function loadLessons() {
 // تحميل الأقسام الفرعية
 function loadSublessons() {
     try {
-        const sublessonsRef = database.ref('sublessons');
+        const sublessonsRef = database.ref(DB.sublessons);
         sublessonsRef.on('value', (snapshot) => {
             sublessons = [];
             snapshot.forEach((childSnapshot) => {
@@ -471,7 +1420,10 @@ function loadSublessons() {
                 sublessons.push(sublesson);
             });
             
+            sublessons.sort((a, b) => (a.order || 999) - (b.order || 999));
+            
             updateSublessonDropdowns();
+            loadSublessonsForAdmin();
         }, (error) => {
             console.error('خطأ في تحميل الأقسام الفرعية:', error);
         });
@@ -480,16 +1432,61 @@ function loadSublessons() {
     }
 }
 
+// =============================================
+// دوال تحديث القوائم المنسدلة
+// =============================================
+
+// تحديث قوائم الصفوف المنسدلة
+function updateGradeDropdowns() {
+    try {
+        const questionGrade = document.getElementById('question-grade');
+        if (questionGrade) {
+            questionGrade.innerHTML = '<option value="">اختر الصف</option>';
+            grades.forEach(grade => {
+                const option = document.createElement('option');
+                option.value = grade.id;
+                option.textContent = grade.name;
+                questionGrade.appendChild(option);
+            });
+        }
+        
+        const filterGrade = document.getElementById('filter-grade');
+        if (filterGrade) {
+            filterGrade.innerHTML = '<option value="">جميع الصفوف</option>';
+            grades.forEach(grade => {
+                const option = document.createElement('option');
+                option.value = grade.id;
+                option.textContent = grade.name;
+                filterGrade.appendChild(option);
+            });
+        }
+        
+        const sectionGradesCheckboxes = document.getElementById('section-grades-checkboxes');
+        if (sectionGradesCheckboxes) {
+            sectionGradesCheckboxes.innerHTML = '';
+            grades.forEach(grade => {
+                const label = document.createElement('label');
+                label.innerHTML = `
+                    <input type="checkbox" name="section-grades" value="${grade.id}"> ${grade.name}
+                `;
+                sectionGradesCheckboxes.appendChild(label);
+            });
+        }
+    } catch (error) {
+        console.error('خطأ في تحديث قوائم الصفوف:', error);
+    }
+}
+
 // تحديث قوائم الأقسام المنسدلة
-function updateSectionDropdowns(selectedYear = '') {
+function updateSectionDropdowns(selectedGrade = '') {
     try {
         if (elements.questionSection) {
-            elements.questionSection.innerHTML = '';
+            elements.questionSection.innerHTML = '<option value="">اختر القسم</option>';
             
             let filteredSections = sections;
-            if (selectedYear) {
+            if (selectedGrade) {
                 filteredSections = sections.filter(section => 
-                    section.grades && section.grades.includes(selectedYear)
+                    section.grades && section.grades.includes(selectedGrade)
                 );
             }
             
@@ -502,7 +1499,7 @@ function updateSectionDropdowns(selectedYear = '') {
         }
         
         if (elements.newSubjectSection) {
-            elements.newSubjectSection.innerHTML = '';
+            elements.newSubjectSection.innerHTML = '<option value="">اختر القسم</option>';
             sections.forEach(section => {
                 const option = document.createElement('option');
                 option.value = section.id;
@@ -637,289 +1634,49 @@ function updateSublessonDropdowns(selectedLesson = '') {
     }
 }
 
-// استعادة الحالة المحفوظة
-function restoreSavedState() {
-    try {
-        if (savedState.selectedYear) {
-            selectedYear = savedState.selectedYear;
-            const yearCard = document.querySelector(`.year-card[data-year="${selectedYear}"]`);
-            if (yearCard) yearCard.click();
-            
-            if (savedState.selectedLesson) {
-                selectedLesson = savedState.selectedLesson;
-            }
-            
-            if (savedState.selectedSublesson) {
-                selectedSublesson = savedState.selectedSublesson;
-            }
-        }
-    } catch (error) {
-        console.error('خطأ في استعادة الحالة:', error);
-    }
-}
+// =============================================
+// دوال عرض الأقسام والمواد
+// =============================================
 
-// حفظ الحالة الحالية
-function saveCurrentState() {
-    try {
-        const state = {
-            user: currentUser,
-            selectedYear: selectedYear,
-            selectedSection: selectedSection,
-            selectedSubject: selectedSubject,
-            selectedLesson: selectedLesson,
-            selectedSublesson: selectedSublesson
-        };
-        localStorage.setItem('quizState', JSON.stringify(state));
-    } catch (error) {
-        console.error('خطأ في حفظ الحالة:', error);
-    }
-}
-
-// إعداد مستمعي الأحداث
-function setupEventListeners() {
-    try {
-        elements.yearCards.forEach(card => {
-            card.addEventListener('click', function() {
-                try {
-                    selectedYear = this.dataset.year;
-                    elements.yearSelectionContainer.style.display = 'none';
-                    elements.sectionSelectionContainer.style.display = 'block';
-                    elements.backBtn.style.display = 'flex';
-                    elements.headerBackBtn.style.display = 'flex';
-                    
-                    const yearText = getYearText(selectedYear);
-                    elements.quizTitle.textContent = `اختبار إختبارات الاختبارات- ${yearText}`;
-                    
-                    loadSectionsForYear(selectedYear);
-                    saveCurrentState();
-                } catch (error) {
-                    console.error('خطأ في اختيار الصف الدراسي:', error);
-                    showError('حدث خطأ في اختيار الصف الدراسي');
-                }
-            });
-        });
-        
-        if (elements.themeToggle) {
-            elements.themeToggle.addEventListener('click', toggleDarkMode);
-        }
-        
-        if (elements.headerBackBtn) {
-            elements.headerBackBtn.addEventListener('click', function() {
-                goBack();
-            });
-        }
-        
-        elements.nextBtn.addEventListener('click', nextQuestion);
-        elements.prevBtn.addEventListener('click', prevQuestion);
-        elements.submitBtn.addEventListener('click', submitQuiz);
-        elements.restartBtn.addEventListener('click', restartQuiz);
-        
-        elements.logoContainer.addEventListener('click', function() {
-            try {
-                window.location.reload();
-            } catch (error) {
-                console.error('خطأ في إعادة تحميل الصفحة:', error);
-            }
-        });
-        
-        elements.adminToggle.addEventListener('click', function() {
-            showPasswordModal();
-        });
-        
-        elements.closeAdmin.addEventListener('click', closeAdminPanel);
-        elements.passwordSubmit.addEventListener('click', checkAdminPassword);
-        
-        elements.passwordCancel.addEventListener('click', function() {
-            try {
-                elements.passwordModal.style.display = 'none';
-                elements.passwordInput.value = '';
-                elements.passwordError.style.display = 'none';
-            } catch (error) {
-                console.error('خطأ في إلغاء نافذة كلمة المرور:', error);
-            }
-        });
-        
-        elements.passwordInput.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                elements.passwordSubmit.click();
-            }
-        });
-        
-        elements.categorySelect.addEventListener('change', function() {
-            try {
-                filterQuestionsByCategory(this.value);
-            } catch (error) {
-                console.error('خطأ في تصفية الأسئلة:', error);
-            }
-        });
-        
-        elements.adminNavItems.forEach(item => {
-            item.addEventListener('click', function() {
-                try {
-                    switchAdminTab(this.dataset.tab);
-                } catch (error) {
-                    console.error('خطأ في تبديل التبويبات:', error);
-                }
-            });
-        });
-        
-        if (elements.questionType) {
-            elements.questionType.addEventListener('change', function() {
-                try {
-                    if (this.value === 'mcq') {
-                        elements.mcqOptions.style.display = 'block';
-                        elements.truefalseOptions.style.display = 'none';
-                    } else {
-                        elements.mcqOptions.style.display = 'none';
-                        elements.truefalseOptions.style.display = 'block';
-                    }
-                } catch (error) {
-                    console.error('خطأ في تغيير نوع السؤال:', error);
-                }
-            });
-        }
-        
-        if (elements.addQuestionBtn) {
-            elements.addQuestionBtn.addEventListener('click', addNewQuestion);
-        }
-        
-        if (elements.saveSettingsBtn) {
-            elements.saveSettingsBtn.addEventListener('click', saveSystemSettings);
-        }
-        
-        if (elements.addSectionBtn) {
-            elements.addSectionBtn.addEventListener('click', addNewSection);
-        }
-        
-        if (elements.addSubjectBtn) {
-            elements.addSubjectBtn.addEventListener('click', addNewSubject);
-        }
-        
-        if (elements.addLessonBtn) {
-            elements.addLessonBtn.addEventListener('click', addNewLesson);
-        }
-        
-        if (elements.addSublessonBtn) {
-            elements.addSublessonBtn.addEventListener('click', addNewSublesson);
-        }
-        
-        if (elements.filterYear && elements.filterSection) {
-            elements.filterYear.addEventListener('change', loadAllQuestions);
-            elements.filterSection.addEventListener('change', loadAllQuestions);
-            elements.filterSubject.addEventListener('change', loadAllQuestions);
-            elements.filterType.addEventListener('change', loadAllQuestions);
-        }
-        
-        if (elements.saveAdBtn) {
-            elements.saveAdBtn.addEventListener('click', saveAd);
-        }
-        
-        if (elements.adTitleInput && elements.adDescriptionInput) {
-            elements.adTitleInput.addEventListener('input', updateAdPreview);
-            elements.adDescriptionInput.addEventListener('input', updateAdPreview);
-        }
-        
-        if (elements.adClose) {
-            elements.adClose.addEventListener('click', function() {
-                elements.adContainer.style.display = 'none';
-            });
-        }
-        
-        if (elements.adAction) {
-            elements.adAction.addEventListener('click', function() {
-                try {
-                    if (currentAd && currentAd.url) {
-                        window.open(currentAd.url, '_blank');
-                    }
-                } catch (error) {
-                    console.error('خطأ في فتح رابط الإعلان:', error);
-                }
-            });
-        }
-        
-        if (elements.autoBackup) {
-            elements.autoBackup.addEventListener('change', function() {
-                autoBackupEnabled = this.checked;
-                localStorage.setItem('autoBackupEnabled', autoBackupEnabled);
-            });
-        }
-        
-        if (elements.manualBackupBtn) {
-            elements.manualBackupBtn.addEventListener('click', createManualBackup);
-        }
-        
-        if (elements.restoreBackupBtn) {
-            elements.restoreBackupBtn.addEventListener('click', restoreBackup);
-        }
-        
-        if (elements.questionYear) {
-            elements.questionYear.addEventListener('change', function() {
-                const selectedYear = this.value;
-                updateSectionDropdowns(selectedYear);
-                elements.questionSection.value = '';
-                elements.questionSubject.value = '';
-                elements.questionLesson.value = '';
-                elements.questionSublesson.value = '';
-                updateSubjectDropdowns('');
-                updateLessonDropdowns('');
-                updateSublessonDropdowns('');
-            });
-        }
-        
-        if (elements.questionSection) {
-            elements.questionSection.addEventListener('change', function() {
-                const selectedSection = this.value;
-                updateSubjectDropdowns(selectedSection);
-                elements.questionSubject.value = '';
-                elements.questionLesson.value = '';
-                elements.questionSublesson.value = '';
-                updateLessonDropdowns('');
-                updateSublessonDropdowns('');
-            });
-        }
-        
-        if (elements.questionSubject) {
-            elements.questionSubject.addEventListener('change', function() {
-                const selectedSubject = this.value;
-                updateLessonDropdowns(selectedSubject);
-                elements.questionLesson.value = '';
-                elements.questionSublesson.value = '';
-                updateSublessonDropdowns('');
-            });
-        }
-        
-        if (elements.questionLesson) {
-            elements.questionLesson.addEventListener('change', function() {
-                const selectedLesson = this.value;
-                updateSublessonDropdowns(selectedLesson);
-                elements.questionSublesson.value = '';
-            });
-        }
-    } catch (error) {
-        console.error('خطأ في إعداد مستمعي الأحداث:', error);
-    }
-}
-
-// تحميل الأقسام بناءً على الصف المختار
-function loadSectionsForYear(year) {
+// عرض الأقسام للصف المختار مع تطبيق التصميم
+function loadSectionsForGrade(gradeId) {
     try {
         elements.sectionContainer.innerHTML = '';
         
-        const yearSections = sections.filter(section => 
-            section.grades && section.grades.includes(year)
+        const gradeSections = sections.filter(section => 
+            section.grades && section.grades.includes(gradeId)
         );
         
-        if (yearSections.length > 0) {
-            yearSections.forEach(section => {
+        if (gradeSections.length > 0) {
+            gradeSections.sort((a, b) => (a.order || 999) - (b.order || 999));
+            
+            gradeSections.forEach(section => {
                 const sectionCard = document.createElement('div');
-                sectionCard.className = 'section-card card-3d';
+                
+                // تجميع كلاسات التصميم
+                const designClasses = [
+                    'section-card',
+                    section.borderRadius || 'radius-soft',
+                    section.shadow || 'shadow-soft',
+                    section.border || 'border-light',
+                    section.hoverEffect || 'hover-scale',
+                    section.padding || 'normal',
+                    section.animation || 'anim-fade',
+                    section.bgStyle || 'gradient-secondary'
+                ].join(' ');
+                
+                sectionCard.className = designClasses;
                 sectionCard.dataset.section = section.id;
+                
+                // لون النص والأيقونة
+                const textColorClass = section.textColor || 'text-white';
+                const iconColorClass = section.iconColor || 'icon-white';
+                
                 sectionCard.innerHTML = `
-                    <i class="${section.icon}"></i>
-                    <h3>${section.name}</h3>
-                    <p>${section.description}</p>
+                    <i class="fas ${section.icon || 'fa-layer-group'} ${iconColorClass}"></i>
+                    <h3 class="${textColorClass}">${section.name}</h3>
+                    <p class="${textColorClass}">${section.description || ''}</p>
                 `;
-                elements.sectionContainer.appendChild(sectionCard);
                 
                 sectionCard.addEventListener('click', function() {
                     try {
@@ -937,7 +1694,13 @@ function loadSectionsForYear(year) {
                         showError('حدث خطأ في اختيار القسم');
                     }
                 });
+                
+                elements.sectionContainer.appendChild(sectionCard);
             });
+            
+            elements.gradeSelectionContainer.style.display = 'none';
+            elements.sectionSelectionContainer.style.display = 'block';
+            elements.headerBackBtn.style.display = 'flex';
         } else {
             elements.sectionContainer.innerHTML = `
                 <div class="no-questions" style="grid-column: 1 / -1;">
@@ -953,7 +1716,7 @@ function loadSectionsForYear(year) {
     }
 }
 
-// تحميل المواد بناءً على القسم المختار
+// عرض المواد للقسم المختار مع تطبيق التصميم
 function loadSubjectsForSection(sectionId) {
     try {
         elements.subjectContainer.innerHTML = '';
@@ -963,14 +1726,34 @@ function loadSubjectsForSection(sectionId) {
         );
         
         if (sectionSubjects.length > 0) {
+            sectionSubjects.sort((a, b) => (a.order || 999) - (b.order || 999));
+            
             sectionSubjects.forEach(subject => {
                 const subjectCard = document.createElement('div');
-                subjectCard.className = 'subject-card card-3d';
+                
+                // تجميع كلاسات التصميم
+                const designClasses = [
+                    'subject-card',
+                    subject.borderRadius || 'radius-soft',
+                    subject.shadow || 'shadow-soft',
+                    subject.border || 'border-light',
+                    subject.hoverEffect || 'hover-scale',
+                    subject.padding || 'normal',
+                    subject.animation || 'anim-fade',
+                    subject.bgStyle || 'gradient-success'
+                ].join(' ');
+                
+                subjectCard.className = designClasses;
                 subjectCard.dataset.subject = subject.id;
+                
+                // لون النص والأيقونة
+                const textColorClass = subject.textColor || 'text-white';
+                const iconColorClass = subject.iconColor || 'icon-white';
+                
                 subjectCard.innerHTML = `
-                    <i class="fas ${subject.icon}"></i>
-                    <h3>${subject.name}</h3>
-                    <p>${subject.description}</p>
+                    <i class="fas ${subject.icon || 'fa-book'} ${iconColorClass}"></i>
+                    <h3 class="${textColorClass}">${subject.name}</h3>
+                    <p class="${textColorClass}">${subject.description || ''}</p>
                 `;
                 
                 subjectCard.addEventListener('click', function() {
@@ -983,7 +1766,6 @@ function loadSubjectsForSection(sectionId) {
                         elements.quizTitle.textContent += ` - ${subjectName}`;
                         
                         loadLessonsForSubject(selectedSubject);
-                        
                         saveCurrentState();
                     } catch (error) {
                         console.error('خطأ في اختيار المادة:', error);
@@ -1012,7 +1794,7 @@ function loadSubjectsForSection(sectionId) {
     }
 }
 
-// تحميل الدروس للمادة المختارة
+// عرض الدروس للمادة المختارة مع تطبيق التصميم
 function loadLessonsForSubject(subjectId) {
     try {
         elements.lessonContainer.innerHTML = '';
@@ -1026,12 +1808,30 @@ function loadLessonsForSubject(subjectId) {
             
             subjectLessons.forEach(lesson => {
                 const lessonCard = document.createElement('div');
-                lessonCard.className = 'lesson-card card-3d';
+                
+                // تجميع كلاسات التصميم
+                const designClasses = [
+                    'lesson-card',
+                    lesson.borderRadius || 'radius-soft',
+                    lesson.shadow || 'shadow-soft',
+                    lesson.border || 'border-light',
+                    lesson.hoverEffect || 'hover-scale',
+                    lesson.padding || 'normal',
+                    lesson.animation || 'anim-fade',
+                    lesson.bgStyle || 'gradient-warning'
+                ].join(' ');
+                
+                lessonCard.className = designClasses;
                 lessonCard.dataset.lesson = lesson.id;
+                
+                // لون النص والأيقونة
+                const textColorClass = lesson.textColor || 'text-white';
+                const iconColorClass = lesson.iconColor || 'icon-white';
+                
                 lessonCard.innerHTML = `
-                    <i class="fas ${lesson.icon}"></i>
-                    <h3>${lesson.name}</h3>
-                    <p>${lesson.description}</p>
+                    <i class="fas ${lesson.icon || 'fa-book-open'} ${iconColorClass}"></i>
+                    <h3 class="${textColorClass}">${lesson.name}</h3>
+                    <p class="${textColorClass}">${lesson.description || ''}</p>
                 `;
                 
                 lessonCard.addEventListener('click', function() {
@@ -1044,7 +1844,6 @@ function loadLessonsForSubject(subjectId) {
                         elements.quizTitle.textContent += ` - ${lessonName}`;
                         
                         loadSublessonsForLesson(selectedLesson);
-                        
                         saveCurrentState();
                     } catch (error) {
                         console.error('خطأ في اختيار الدرس:', error);
@@ -1064,7 +1863,7 @@ function loadLessonsForSubject(subjectId) {
                 elements.quizContainer.style.display = 'block';
                 elements.headerBackBtn.style.display = 'flex';
                 loadQuestions();
-            }, 500);
+            }, 300);
         }
     } catch (error) {
         console.error('خطأ في تحميل الدروس للمادة:', error);
@@ -1072,7 +1871,7 @@ function loadLessonsForSubject(subjectId) {
     }
 }
 
-// تحميل الأقسام الفرعية للدرس المختار
+// عرض الأقسام الفرعية للدرس المختار مع تطبيق التصميم
 function loadSublessonsForLesson(lessonId) {
     try {
         elements.sublessonContainer.innerHTML = '';
@@ -1086,12 +1885,30 @@ function loadSublessonsForLesson(lessonId) {
             
             lessonSublessons.forEach(sublesson => {
                 const sublessonCard = document.createElement('div');
-                sublessonCard.className = 'sublesson-card card-3d';
+                
+                // تجميع كلاسات التصميم
+                const designClasses = [
+                    'sublesson-card',
+                    sublesson.borderRadius || 'radius-soft',
+                    sublesson.shadow || 'shadow-soft',
+                    sublesson.border || 'border-light',
+                    sublesson.hoverEffect || 'hover-scale',
+                    sublesson.padding || 'normal',
+                    sublesson.animation || 'anim-fade',
+                    sublesson.bgStyle || 'gradient-info'
+                ].join(' ');
+                
+                sublessonCard.className = designClasses;
                 sublessonCard.dataset.sublesson = sublesson.id;
+                
+                // لون النص والأيقونة
+                const textColorClass = sublesson.textColor || 'text-white';
+                const iconColorClass = sublesson.iconColor || 'icon-white';
+                
                 sublessonCard.innerHTML = `
-                    <i class="fas ${sublesson.icon}"></i>
-                    <h3>${sublesson.name}</h3>
-                    <p>${sublesson.description}</p>
+                    <i class="fas ${sublesson.icon || 'fa-folder'} ${iconColorClass}"></i>
+                    <h3 class="${textColorClass}">${sublesson.name}</h3>
+                    <p class="${textColorClass}">${sublesson.description || ''}</p>
                 `;
                 
                 sublessonCard.addEventListener('click', function() {
@@ -1137,13 +1954,17 @@ function loadSublessonsForLesson(lessonId) {
     }
 }
 
+// =============================================
+// دوال الاختبارات والأسئلة
+// =============================================
+
 // تحميل الإختبارات من Firebase
 function loadQuestions() {
     try {
         elements.quizLoading.style.display = 'flex';
         elements.questionContainer.innerHTML = '';
         
-        const questionsRef = database.ref('questions');
+        const questionsRef = database.ref(DB.questions);
         questionsRef.once('value', (snapshot) => {
             questions = [];
             categories = new Set(['all']);
@@ -1152,7 +1973,7 @@ function loadQuestions() {
                 const question = childSnapshot.val();
                 question.id = childSnapshot.key;
                 
-                if (question.year === selectedYear && 
+                if (question.grade === selectedGrade && 
                     question.section === selectedSection && 
                     (!selectedSubject || question.subject === selectedSubject) &&
                     (!selectedLesson || question.lesson === selectedLesson) &&
@@ -1186,533 +2007,6 @@ function loadQuestions() {
     }
 }
 
-// تحميل جميع الأسئلة للإدارة
-function loadAllQuestions() {
-    try {
-        const questionsRef = database.ref('questions');
-        questionsRef.once('value', (snapshot) => {
-            elements.allQuestionsList.innerHTML = '';
-            
-            const filterYear = elements.filterYear.value;
-            const filterSection = elements.filterSection.value;
-            const filterSubject = elements.filterSubject.value;
-            const filterType = elements.filterType.value;
-            
-            let hasQuestions = false;
-            
-            snapshot.forEach((childSnapshot) => {
-                const question = childSnapshot.val();
-                question.id = childSnapshot.key;
-                
-                if ((!filterYear || question.year === filterYear) && 
-                    (!filterSection || question.section === filterSection) &&
-                    (!filterSubject || question.subject === filterSubject) &&
-                    (!filterType || question.type === filterType)) {
-                    
-                    hasQuestions = true;
-                    const sectionName = sections.find(s => s.id === question.section)?.name || question.section;
-                    const subjectName = subjects.find(s => s.id === question.subject)?.name || question.subject || 'عام';
-                    const lessonName = lessons.find(l => l.id === question.lesson)?.name || '';
-                    const sublessonName = sublessons.find(s => s.id === question.sublesson)?.name || '';
-                    
-                    const questionItem = document.createElement('div');
-                    questionItem.className = 'question-item';
-                    questionItem.innerHTML = `
-                        <h4>${question.text}</h4>
-                        <div class="question-meta">
-                            <span><i class="fas fa-graduation-cap"></i> ${getYearText(question.year)}</span>
-                            <span><i class="fas fa-layer-group"></i> ${sectionName}</span>
-                            <span><i class="fas fa-book"></i> ${subjectName}</span>
-                            ${lessonName ? `<span><i class="fas fa-book-open"></i> ${lessonName}</span>` : ''}
-                            ${sublessonName ? `<span><i class="fas fa-folder"></i> ${sublessonName}</span>` : ''}
-                            <span><i class="fas fa-${question.type === 'mcq' ? 'list' : 'check'}"></i> ${question.type === 'mcq' ? 'اختيار من متعدد' : 'صح أم خطأ'}</span>
-                        </div>
-                        <div class="options-list">
-                            ${question.type === 'mcq' ? `
-                                <div class="option-item ${question.correctAnswer === '1' ? 'correct-option' : ''}">1. ${question.option1}</div>
-                                <div class="option-item ${question.correctAnswer === '2' ? 'correct-option' : ''}">2. ${question.option2}</div>
-                                ${question.option3 ? `<div class="option-item ${question.correctAnswer === '3' ? 'correct-option' : ''}">3. ${question.option3}</div>` : ''}
-                                ${question.option4 ? `<div class="option-item ${question.correctAnswer === '4' ? 'correct-option' : ''}">4. ${question.option4}</div>` : ''}
-                            ` : `
-                                <div class="option-item ${question.correctAnswer === 'true' ? 'correct-option' : ''}">${question.correctAnswer === 'true' ? 'صح' : 'خطأ'}</div>
-                            `}
-                        </div>
-                        <div class="question-actions">
-                            <button class="btn-admin btn-admin-warning btn-sm" onclick="editQuestion('${question.id}')">
-                                <i class="fas fa-edit"></i> تعديل
-                            </button>
-                            <button class="btn-admin btn-admin-danger btn-sm" onclick="deleteQuestion('${question.id}')">
-                                <i class="fas fa-trash"></i> حذف
-                            </button>
-                        </div>
-                    `;
-                    
-                    elements.allQuestionsList.appendChild(questionItem);
-                }
-            });
-            
-            if (!hasQuestions) {
-                elements.allQuestionsList.innerHTML = `
-                    <div class="no-questions">
-                        <i class="fas fa-info-circle"></i>
-                        <h3>لا توجد أسئلة متطابقة مع معايير التصفية</h3>
-                        <p>حاول تغيير معايير التصفية أو أضف أسئلة جديدة.</p>
-                    </div>
-                `;
-            }
-            
-            updateAdminStats();
-        }, (error) => {
-            console.error('خطأ في تحميل الأسئلة للإدارة:', error);
-            showError('حدث خطأ في تحميل الأسئلة للإدارة');
-        });
-    } catch (error) {
-        console.error('خطأ في دالة تحميل الأسئلة للإدارة:', error);
-        showError('حدث خطأ في تحميل الأسئلة للإدارة');
-    }
-}
-
-// تحديث إحصائيات لوحة الإدارة
-function updateAdminStats() {
-    try {
-        const questionsRef = database.ref('questions');
-        questionsRef.once('value', (snapshot) => {
-            elements.totalQuestions.textContent = snapshot.numChildren();
-        }, (error) => {
-            console.error('خطأ في تحديث إحصائيات الأسئلة:', error);
-        });
-        
-        const resultsRef = database.ref('quizResults');
-        resultsRef.once('value', (snapshot) => {
-            elements.totalQuizzes.textContent = snapshot.numChildren();
-            
-            let totalScore = 0;
-            let count = 0;
-            
-            snapshot.forEach((childSnapshot) => {
-                const result = childSnapshot.val();
-                totalScore += result.percentage;
-                count++;
-            });
-            
-            const avg = count > 0 ? Math.round(totalScore / count) : 0;
-            elements.avgScore.textContent = `${avg}%`;
-            
-            elements.recentResults.innerHTML = '';
-            const recentResults = [];
-            
-            snapshot.forEach((childSnapshot) => {
-                recentResults.push(childSnapshot.val());
-            });
-            
-            recentResults.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-            
-            recentResults.slice(0, 5).forEach(result => {
-                const resultItem = document.createElement('div');
-                resultItem.className = 'question-item';
-                resultItem.innerHTML = `
-                    <h4>${result.userName}</h4>
-                    <div class="question-meta">
-                        <span><i class="fas fa-graduation-cap"></i> ${getYearText(result.year)}</span>
-                        <span><i class="fas fa-chart-line"></i> ${result.percentage}%</span>
-                        <span><i class="fas fa-clock"></i> ${result.timeTaken}</span>
-                    </div>
-                `;
-                
-                elements.recentResults.appendChild(resultItem);
-            });
-        }, (error) => {
-            console.error('خطأ في تحديث إحصائيات النتائج:', error);
-        });
-    } catch (error) {
-        console.error('خطأ في دالة تحديث الإحصائيات:', error);
-    }
-}
-
-// تحديث إحصائيات المستخدمين
-function updateUserAnalytics() {
-    try {
-        const totalUsers = userStats.uniqueUsers.size;
-        const activeUsers = userStats.activeUsers.size;
-        const dailyActive = userStats.dailyActiveUsers.size;
-        
-        const avgSessions = userStats.userSessions.length > 0 
-            ? Math.round(userStats.userSessions.reduce((sum, session) => sum + session.count, 0) / userStats.userSessions.length)
-            : 0;
-        
-        if (elements.totalUsersCount) {
-            elements.totalUsersCount.textContent = totalUsers;
-        }
-        if (elements.activeUsersCount) {
-            elements.activeUsersCount.textContent = activeUsers;
-        }
-        if (elements.dailyActiveCount) {
-            elements.dailyActiveCount.textContent = dailyActive;
-        }
-        if (elements.avgSessionCount) {
-            elements.avgSessionCount.textContent = avgSessions;
-        }
-        
-        updateUserActivityChart();
-        updateRecentActivities();
-    } catch (error) {
-        console.error('خطأ في تحديث إحصائيات المستخدمين:', error);
-    }
-}
-
-// تحديث مخطط نشاط المستخدمين
-function updateUserActivityChart() {
-    try {
-        const chartContainer = elements.userActivityChart;
-        if (!chartContainer) return;
-        
-        const today = new Date();
-        const activityData = [];
-        
-        for (let i = 6; i >= 0; i--) {
-            const date = new Date(today);
-            date.setDate(date.getDate() - i);
-            const dateStr = date.toLocaleDateString('ar-SA', { weekday: 'short' });
-            
-            const dayKey = date.toDateString();
-            let activeCount = 0;
-            
-            userStats.userActivities.forEach(activity => {
-                const activityDate = new Date(activity.timestamp);
-                if (activityDate.toDateString() === dayKey) {
-                    activeCount++;
-                }
-            });
-            
-            activityData.push({
-                day: dateStr,
-                count: activeCount
-            });
-        }
-        
-        const maxCount = Math.max(...activityData.map(d => d.count), 1);
-        
-        let chartHTML = `
-            <div style="display: flex; align-items: flex-end; justify-content: space-between; height: 250px; padding: 20px;">
-        `;
-        
-        activityData.forEach(data => {
-            const height = (data.count / maxCount) * 200;
-            chartHTML += `
-                <div style="display: flex; flex-direction: column; align-items: center; height: 100%;">
-                    <div style="width: 40px; background: var(--gradient-primary); border-radius: 8px 8px 0 0; height: ${height}px;"></div>
-                    <div style="margin-top: 10px; font-weight: bold; color: var(--text-primary);">${data.count}</div>
-                    <div style="margin-top: 5px; font-size: 12px; color: var(--text-secondary);">${data.day}</div>
-                </div>
-            `;
-        });
-        
-        chartHTML += `</div>`;
-        
-        chartContainer.innerHTML = chartHTML;
-    } catch (error) {
-        console.error('خطأ في تحديث مخطط النشاط:', error);
-    }
-}
-
-// تحديث النشاطات الأخيرة
-function updateRecentActivities() {
-    try {
-        const activityList = elements.userActivityList;
-        if (!activityList) return;
-        
-        const recentActivities = [...userStats.userActivities]
-            .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-            .slice(0, 10);
-        
-        activityList.innerHTML = '';
-        
-        if (recentActivities.length === 0) {
-            activityList.innerHTML = `
-                <div class="no-questions">
-                    <i class="fas fa-info-circle"></i>
-                    <h3>لا توجد نشاطات مسجلة</h3>
-                    <p>سيتم عرض نشاطات المستخدمين هنا عند زيارة الموقع.</p>
-                </div>
-            `;
-            return;
-        }
-        
-        recentActivities.forEach(activity => {
-            const activityDate = new Date(activity.timestamp);
-            const timeAgo = getTimeAgo(activityDate);
-            
-            const userInitials = activity.userId.substring(0, 2).toUpperCase();
-            
-            const activityItem = document.createElement('div');
-            activityItem.className = 'user-activity-item';
-            activityItem.innerHTML = `
-                <div class="user-activity-avatar">${userInitials}</div>
-                <div class="user-activity-info">
-                    <div class="user-activity-name">مستخدم ${activity.userId.substring(0, 8)}</div>
-                    <div class="user-activity-time">${activity.action === 'visit' ? 'زيارة الموقع' : 'إجراء اختبار'} • ${timeAgo}</div>
-                </div>
-            `;
-            
-            activityList.appendChild(activityItem);
-        });
-    } catch (error) {
-        console.error('خطأ في تحديث النشاطات الأخيرة:', error);
-    }
-}
-
-// حساب الوقت الماضي
-function getTimeAgo(date) {
-    const now = new Date();
-    const diffMs = now - date;
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-    
-    if (diffMins < 1) return 'الآن';
-    if (diffMins < 60) return `قبل ${diffMins} دقيقة`;
-    if (diffHours < 24) return `قبل ${diffHours} ساعة`;
-    return `قبل ${diffDays} يوم`;
-}
-
-// تحميل الأقسام للإدارة
-function loadSectionsForAdmin() {
-    try {
-        const sectionsRef = database.ref('sections');
-        sectionsRef.once('value', (snapshot) => {
-            elements.sectionsList.innerHTML = '';
-            
-            snapshot.forEach((childSnapshot) => {
-                const section = childSnapshot.val();
-                section.id = childSnapshot.key;
-                
-                const sectionItem = document.createElement('div');
-                sectionItem.className = 'question-item';
-                sectionItem.innerHTML = `
-                    <h4><i class="${section.icon}"></i> ${section.name}</h4>
-                    <div class="question-meta">
-                        <span><i class="fas fa-graduation-cap"></i> ${section.grades ? section.grades.map(g => getYearText(g)).join(', ') : 'لم يتم تحديد صفوف'}</span>
-                    </div>
-                    <p>${section.description}</p>
-                    <div class="question-actions">
-                        <button class="btn-admin btn-admin-warning btn-sm" onclick="editSection('${section.id}')">
-                            <i class="fas fa-edit"></i> تعديل
-                        </button>
-                        <button class="btn-admin btn-admin-danger btn-sm" onclick="deleteSection('${section.id}')">
-                            <i class="fas fa-trash"></i> حذف
-                        </button>
-                    </div>
-                `;
-                
-                elements.sectionsList.appendChild(sectionItem);
-            });
-        }, (error) => {
-            console.error('خطأ في تحميل الأقسام للإدارة:', error);
-        });
-    } catch (error) {
-        console.error('خطأ في دالة تحميل الأقسام للإدارة:', error);
-    }
-}
-
-// تحميل المواد للإدارة
-function loadSubjectsForAdmin() {
-    try {
-        const subjectsRef = database.ref('subjects');
-        subjectsRef.once('value', (snapshot) => {
-            elements.subjectsList.innerHTML = '';
-            
-            snapshot.forEach((childSnapshot) => {
-                const subject = childSnapshot.val();
-                subject.id = childSnapshot.key;
-                
-                const sectionName = sections.find(s => s.id === subject.sectionId)?.name || subject.sectionId;
-                
-                const subjectItem = document.createElement('div');
-                subjectItem.className = 'question-item';
-                subjectItem.innerHTML = `
-                    <h4><i class="fas ${subject.icon}"></i> ${subject.name}</h4>
-                    <div class="question-meta">
-                        <span><i class="fas fa-layer-group"></i> ${sectionName}</span>
-                    </div>
-                    <p>${subject.description}</p>
-                    <div class="question-actions">
-                        <button class="btn-admin btn-admin-warning btn-sm" onclick="editSubject('${subject.id}')">
-                            <i class="fas fa-edit"></i> تعديل
-                        </button>
-                        <button class="btn-admin btn-admin-danger btn-sm" onclick="deleteSubject('${subject.id}')">
-                            <i class="fas fa-trash"></i> حذف
-                        </button>
-                    </div>
-                `;
-                
-                elements.subjectsList.appendChild(subjectItem);
-            });
-        }, (error) => {
-            console.error('خطأ في تحميل المواد للإدارة:', error);
-        });
-    } catch (error) {
-        console.error('خطأ في دالة تحميل المواد للإدارة:', error);
-    }
-}
-
-// تحميل الدروس للإدارة
-function loadLessonsForAdmin() {
-    try {
-        const lessonsRef = database.ref('lessons');
-        lessonsRef.once('value', (snapshot) => {
-            const lessonsList = document.getElementById('lessons-list');
-            if (!lessonsList) return;
-            
-            lessonsList.innerHTML = '';
-            
-            snapshot.forEach((childSnapshot) => {
-                const lesson = childSnapshot.val();
-                lesson.id = childSnapshot.key;
-                
-                const subjectName = subjects.find(s => s.id === lesson.subjectId)?.name || lesson.subjectId;
-                
-                const lessonItem = document.createElement('div');
-                lessonItem.className = 'question-item';
-                lessonItem.innerHTML = `
-                    <h4><i class="fas ${lesson.icon}"></i> ${lesson.name}</h4>
-                    <div class="question-meta">
-                        <span><i class="fas fa-book"></i> ${subjectName}</span>
-                        <span><i class="fas fa-sort-numeric-up"></i> الترتيب: ${lesson.order || 1}</span>
-                    </div>
-                    <p>${lesson.description}</p>
-                    <div class="question-actions">
-                        <button class="btn-admin btn-admin-warning btn-sm" onclick="editLesson('${lesson.id}')">
-                            <i class="fas fa-edit"></i> تعديل
-                        </button>
-                        <button class="btn-admin btn-admin-danger btn-sm" onclick="deleteLesson('${lesson.id}')">
-                            <i class="fas fa-trash"></i> حذف
-                        </button>
-                    </div>
-                `;
-                
-                lessonsList.appendChild(lessonItem);
-            });
-        }, (error) => {
-            console.error('خطأ في تحميل الدروس للإدارة:', error);
-        });
-    } catch (error) {
-        console.error('خطأ في دالة تحميل الدروس للإدارة:', error);
-    }
-}
-
-// تحميل الأقسام الفرعية للإدارة
-function loadSublessonsForAdmin() {
-    try {
-        const sublessonsRef = database.ref('sublessons');
-        sublessonsRef.once('value', (snapshot) => {
-            const sublessonsList = document.getElementById('sublessons-list');
-            if (!sublessonsList) return;
-            
-            sublessonsList.innerHTML = '';
-            
-            snapshot.forEach((childSnapshot) => {
-                const sublesson = childSnapshot.val();
-                sublesson.id = childSnapshot.key;
-                
-                const lessonName = lessons.find(l => l.id === sublesson.lessonId)?.name || sublesson.lessonId;
-                
-                const sublessonItem = document.createElement('div');
-                sublessonItem.className = 'question-item';
-                sublessonItem.innerHTML = `
-                    <h4><i class="fas ${sublesson.icon}"></i> ${sublesson.name}</h4>
-                    <div class="question-meta">
-                        <span><i class="fas fa-book-open"></i> ${lessonName}</span>
-                        <span><i class="fas fa-sort-numeric-up"></i> الترتيب: ${sublesson.order || 1}</span>
-                    </div>
-                    <p>${sublesson.description}</p>
-                    <div class="question-actions">
-                        <button class="btn-admin btn-admin-warning btn-sm" onclick="editSublesson('${sublesson.id}')">
-                            <i class="fas fa-edit"></i> تعديل
-                        </button>
-                        <button class="btn-admin btn-admin-danger btn-sm" onclick="deleteSublesson('${sublesson.id}')">
-                            <i class="fas fa-trash"></i> حذف
-                        </button>
-                    </div>
-                `;
-                
-                sublessonsList.appendChild(sublessonItem);
-            });
-        }, (error) => {
-            console.error('خطأ في تحميل الأقسام الفرعية للإدارة:', error);
-        });
-    } catch (error) {
-        console.error('خطأ في دالة تحميل الأقسام الفرعية للإدارة:', error);
-    }
-}
-
-// تصفية الإختبارات حسب التصنيف
-function filterQuestionsByCategory(selectedCategory) {
-    try {
-        if (selectedCategory === 'all') {
-            loadQuestions();
-            return;
-        }
-        
-        elements.quizLoading.style.display = 'flex';
-        elements.questionContainer.innerHTML = '';
-        
-        const filteredQuestions = questions.filter(q => q.category === selectedCategory);
-        
-        if (filteredQuestions.length > 0) {
-            questions = filteredQuestions;
-            currentQuestionIndex = 0;
-            score = 0;
-            userAnswers = Array(questions.length).fill(null);
-            showQuestion();
-            updateProgressBar();
-        } else {
-            showNoQuestionsMessage();
-        }
-        
-        elements.quizLoading.style.display = 'none';
-    } catch (error) {
-        console.error('خطأ في تصفية الأسئلة:', error);
-        elements.quizLoading.style.display = 'none';
-        showError('حدث خطأ في تصفية الأسئلة');
-    }
-}
-
-// تحديث قوائم التصنيفات
-function updateCategoryFilters() {
-    try {
-        elements.categorySelect.innerHTML = '';
-        categories.forEach(category => {
-            const option = document.createElement('option');
-            option.value = category;
-            option.textContent = category === 'all' ? 'جميع التصنيفات' : category;
-            elements.categorySelect.appendChild(option);
-        });
-        
-        elements.categoryFilter.style.display = categories.size > 2 ? 'block' : 'none';
-    } catch (error) {
-        console.error('خطأ في تحديث قوائم التصنيفات:', error);
-    }
-}
-
-// تبديل وضع Dark Mode
-function toggleDarkMode() {
-    try {
-        isDarkMode = !isDarkMode;
-        
-        if (isDarkMode) {
-            document.documentElement.setAttribute('data-theme', 'dark');
-            elements.themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
-            localStorage.setItem('darkMode', 'true');
-        } else {
-            document.documentElement.removeAttribute('data-theme');
-            elements.themeToggle.innerHTML = '<i class="fas fa-moon"></i>';
-            localStorage.setItem('darkMode', 'false');
-        }
-    } catch (error) {
-        console.error('خطأ في تبديل وضع Dark Mode:', error);
-    }
-}
-
 // بدء الاختبار
 function startQuiz() {
     try {
@@ -1725,6 +2019,18 @@ function startQuiz() {
         elements.resultsContainer.style.display = 'none';
         elements.backBtn.style.display = 'flex';
         elements.headerBackBtn.style.display = 'flex';
+        
+        // تسجيل بدء الاختبار للمستخدم إذا كان مسجلاً
+        if (currentUser) {
+            addUserActivity(currentUser.id, 'start_quiz', 'بدأ اختبار جديد', {
+                grade: selectedGrade,
+                section: selectedSection,
+                subject: selectedSubject,
+                lesson: selectedLesson,
+                sublesson: selectedSublesson,
+                questionsCount: questions.length
+            });
+        }
     } catch (error) {
         console.error('خطأ في بدء الاختبار:', error);
         showError('حدث خطأ في بدء الاختبار');
@@ -1905,9 +2211,64 @@ function showResults() {
         
         saveQuizResult(score, questions.length, timeTaken);
         trackQuizCompletion(score, percentage, timeTaken);
+        
+        // تحديث إحصائيات المستخدم إذا كان مسجلاً
+        if (currentUser) {
+            updateUserStatsAfterQuiz(score, questions.length, timeTaken);
+        }
     } catch (error) {
         console.error('خطأ في عرض النتائج:', error);
         showError('حدث خطأ في عرض النتائج');
+    }
+}
+
+// تحديث إحصائيات المستخدم بعد الاختبار
+function updateUserStatsAfterQuiz(score, totalQuestions, timeTaken) {
+    try {
+        const percentage = Math.round((score / totalQuestions) * 100);
+        
+        // تحديث ملف المستخدم
+        const profileRef = database.ref(`${DB.profiles}/${currentUser.id}`);
+        profileRef.child('stats').transaction((currentStats) => {
+            if (!currentStats) currentStats = {};
+            
+            return {
+                totalQuizzes: (currentStats.totalQuizzes || 0) + 1,
+                averageScore: ((currentStats.averageScore || 0) + percentage) / ((currentStats.totalQuizzes || 0) + 1),
+                totalTime: (currentStats.totalTime || 0) + parseInt(timeTaken.split(':')[0]) * 60 + parseInt(timeTaken.split(':')[1]),
+                bestScore: Math.max(currentStats.bestScore || 0, percentage),
+                lastQuizDate: new Date().toISOString()
+            };
+        });
+        
+        // حفظ نتيجة الاختبار في جدول نتائج المستخدم
+        const resultRef = database.ref(`${DB.results}/${currentUser.id}`);
+        const newResult = {
+            userId: currentUser.id,
+            userName: currentUser.name,
+            score: score,
+            totalQuestions: totalQuestions,
+            percentage: percentage,
+            timeTaken: timeTaken,
+            grade: selectedGrade,
+            section: selectedSection,
+            subject: selectedSubject,
+            lesson: selectedLesson,
+            sublesson: selectedSublesson,
+            timestamp: new Date().toISOString()
+        };
+        
+        resultRef.push(newResult);
+        
+        // إضافة نشاط
+        addUserActivity(currentUser.id, 'complete_quiz', 'أكمل اختبار', {
+            score: score,
+            totalQuestions: totalQuestions,
+            percentage: percentage
+        });
+        
+    } catch (error) {
+        console.error('خطأ في تحديث إحصائيات المستخدم:', error);
     }
 }
 
@@ -1922,28 +2283,29 @@ function trackQuizCompletion(score, percentage, timeTaken) {
             score: score,
             percentage: percentage,
             timeTaken: timeTaken,
-            year: selectedYear,
+            grade: selectedGrade,
             section: selectedSection,
             subject: selectedSubject,
             lesson: selectedLesson,
-            sublesson: selectedSublesson
+            sublesson: selectedSublesson,
+            userName: currentUser ? currentUser.name : 'زائر'
         };
         
-        userStats.userActivities.push(quizSession);
+        if (!siteStats.userActivities) siteStats.userActivities = [];
+        siteStats.userActivities.push(quizSession);
         
-        const userQuizCount = userStats.userActivities.filter(a => 
-            a.userId === userId && a.action === 'quiz_complete'
-        ).length;
+        if (!siteStats.quizResults) siteStats.quizResults = [];
+        siteStats.quizResults.push(quizSession);
         
-        if (userQuizCount >= 3) {
-            userStats.permanentUsers.add(userId);
+        if (siteStats.userActivities.length > 100) {
+            siteStats.userActivities = siteStats.userActivities.slice(-100);
         }
         
-        if (userStats.userActivities.length > 100) {
-            userStats.userActivities = userStats.userActivities.slice(-100);
+        if (siteStats.quizResults.length > 100) {
+            siteStats.quizResults = siteStats.quizResults.slice(-100);
         }
         
-        saveUserStats();
+        saveSiteStats();
         saveUserActivityToFirebase(quizSession);
     } catch (error) {
         console.error('خطأ في تتبع إكمال الاختبار:', error);
@@ -1977,16 +2339,16 @@ function saveQuizResult(score, totalQuestions, timeTaken) {
             percentage: Math.round((score / totalQuestions) * 100),
             timestamp: new Date().toISOString(),
             timeTaken: timeTaken,
-            year: selectedYear,
+            grade: selectedGrade,
             section: selectedSection,
             subject: selectedSubject,
             lesson: selectedLesson,
             sublesson: selectedSublesson,
-            userId: currentUser ? currentUser.id : null,
+            userId: localStorage.getItem('userId'),
             userName: currentUser ? currentUser.name : 'زائر'
         };
         
-        const resultsRef = database.ref('quizResults');
+        const resultsRef = database.ref(DB.quizResults);
         resultsRef.push(result)
             .catch(error => {
                 console.error('Error saving quiz result:', error);
@@ -2026,140 +2388,261 @@ function restartQuiz() {
     }
 }
 
-// الحصول على نص الصف الدراسي
-function getYearText(year) {
-    switch(year) {
-        case 'secondary1': return 'الصف الأول الثانوي';
-        case 'secondary2': return 'الصف الثاني الثانوي';
-        case 'secondary3': return 'الصف الثالث الثانوي';
-        default: return '';
-    }
-}
-
-// عرض نافذة كلمة المرور
-function showPasswordModal() {
+// عرض رسالة عدم وجود إختبارات
+function showNoQuestionsMessage() {
     try {
-        elements.passwordModal.style.display = 'flex';
-        elements.passwordInput.focus();
-        elements.passwordError.style.display = 'none';
+        elements.questionContainer.innerHTML = `
+            <div class="no-questions">
+                <i class="fas fa-info-circle"></i> لا توجد إختبارات متاحة حالياً للصف والقسم المحدد.
+            </div>
+        `;
+        elements.nextBtn.style.display = 'none';
+        elements.submitBtn.style.display = 'none';
     } catch (error) {
-        console.error('خطأ في عرض نافذة كلمة المرور:', error);
+        console.error('خطأ في عرض رسالة عدم وجود أسئلة:', error);
     }
 }
 
-// إغلاق لوحة التحكم
-function closeAdminPanel() {
+// عرض رسالة خطأ
+function showError(message) {
     try {
-        elements.adminPanel.classList.remove('active');
-        elements.overlay.classList.remove('active');
+        alert(message);
     } catch (error) {
-        console.error('خطأ في إغلاق لوحة التحكم:', error);
+        console.error('خطأ في عرض رسالة الخطأ:', error);
     }
 }
 
-// التحقق من كلمة المرور
-function checkAdminPassword() {
+// تصفية الإختبارات حسب التصنيف
+function filterQuestionsByCategory(selectedCategory) {
     try {
-        if (elements.passwordInput.value === adminPassword) {
-            elements.passwordModal.style.display = 'none';
-            elements.adminPanel.style.display = 'block';
-            elements.adminPanel.classList.add('active');
-            elements.overlay.classList.add('active');
-            elements.passwordInput.value = '';
-            elements.passwordError.style.display = 'none';
-            
-            loadAllQuestions();
-            loadSectionsForAdmin();
-            loadSubjectsForAdmin();
-            loadLessonsForAdmin();
-            loadSublessonsForAdmin();
-            updateUserAnalytics();
+        if (selectedCategory === 'all') {
+            loadQuestions();
+            return;
+        }
+        
+        elements.quizLoading.style.display = 'flex';
+        elements.questionContainer.innerHTML = '';
+        
+        const filteredQuestions = questions.filter(q => q.category === selectedCategory);
+        
+        if (filteredQuestions.length > 0) {
+            questions = filteredQuestions;
+            currentQuestionIndex = 0;
+            score = 0;
+            userAnswers = Array(questions.length).fill(null);
+            showQuestion();
+            updateProgressBar();
         } else {
-            elements.passwordError.style.display = 'block';
+            showNoQuestionsMessage();
         }
+        
+        elements.quizLoading.style.display = 'none';
     } catch (error) {
-        console.error('خطأ في التحقق من كلمة المرور:', error);
-        showError('حدث خطأ في التحقق من كلمة المرور');
+        console.error('خطأ في تصفية الأسئلة:', error);
+        elements.quizLoading.style.display = 'none';
+        showError('حدث خطأ في تصفية الأسئلة');
     }
 }
 
-// حذف قسم
-function deleteSection(sectionId) {
+// تحديث قوائم التصنيفات
+function updateCategoryFilters() {
     try {
-        if (confirm('هل أنت متأكد من حذف هذا القسم؟ سيتم حذف جميع المواد والأسئلة المرتبطة به.')) {
-            database.ref('sections/' + sectionId).remove()
-                .then(() => {
-                    alert('تم حذف القسم بنجاح');
-                    loadSectionsForAdmin();
-                    createAutoBackup();
-                })
-                .catch(error => {
-                    alert('حدث خطأ أثناء حذف القسم: ' + error.message);
-                });
-        }
+        elements.categorySelect.innerHTML = '';
+        categories.forEach(category => {
+            const option = document.createElement('option');
+            option.value = category;
+            option.textContent = category === 'all' ? 'جميع التصنيفات' : category;
+            elements.categorySelect.appendChild(option);
+        });
+        
+        elements.categoryFilter.style.display = categories.size > 2 ? 'block' : 'none';
     } catch (error) {
-        console.error('خطأ في حذف القسم:', error);
-        showError('حدث خطأ أثناء حذف القسم');
+        console.error('خطأ في تحديث قوائم التصنيفات:', error);
     }
 }
 
-// حذف مادة
-function deleteSubject(subjectId) {
+// =============================================
+// دوال لوحة الإدارة
+// =============================================
+
+// تحميل جميع الأسئلة للإدارة
+function loadAllQuestions() {
     try {
-        if (confirm('هل أنت متأكد من حذف هذه المادة؟ سيتم حذف جميع الأسئلة المرتبطة بها.')) {
-            database.ref('subjects/' + subjectId).remove()
-                .then(() => {
-                    alert('تم حذف المادة بنجاح');
-                    loadSubjectsForAdmin();
-                    createAutoBackup();
-                })
-                .catch(error => {
-                    alert('حدث خطأ أثناء حذف المادة: ' + error.message);
-                });
+        const questionsRef = database.ref(DB.questions);
+        questionsRef.once('value', (snapshot) => {
+            elements.allQuestionsList.innerHTML = '';
+            
+            const filterGrade = elements.filterGrade.value;
+            const filterSection = elements.filterSection.value;
+            const filterSubject = elements.filterSubject.value;
+            const filterType = elements.filterType.value;
+            
+            let hasQuestions = false;
+            
+            snapshot.forEach((childSnapshot) => {
+                const question = childSnapshot.val();
+                question.id = childSnapshot.key;
+                
+                if ((!filterGrade || question.grade === filterGrade) && 
+                    (!filterSection || question.section === filterSection) &&
+                    (!filterSubject || question.subject === filterSubject) &&
+                    (!filterType || question.type === filterType)) {
+                    
+                    hasQuestions = true;
+                    const gradeName = grades.find(g => g.id === question.grade)?.name || question.grade;
+                    const sectionName = sections.find(s => s.id === question.section)?.name || question.section;
+                    const subjectName = subjects.find(s => s.id === question.subject)?.name || question.subject || 'عام';
+                    const lessonName = lessons.find(l => l.id === question.lesson)?.name || '';
+                    const sublessonName = sublessons.find(s => s.id === question.sublesson)?.name || '';
+                    
+                    const questionItem = document.createElement('div');
+                    questionItem.className = 'question-item';
+                    questionItem.innerHTML = `
+                        <h4>${question.text}</h4>
+                        <div class="question-meta">
+                            <span><i class="fas fa-graduation-cap"></i> ${gradeName}</span>
+                            <span><i class="fas fa-layer-group"></i> ${sectionName}</span>
+                            <span><i class="fas fa-book"></i> ${subjectName}</span>
+                            ${lessonName ? `<span><i class="fas fa-book-open"></i> ${lessonName}</span>` : ''}
+                            ${sublessonName ? `<span><i class="fas fa-folder"></i> ${sublessonName}</span>` : ''}
+                            <span><i class="fas fa-${question.type === 'mcq' ? 'list' : 'check'}"></i> ${question.type === 'mcq' ? 'اختيار من متعدد' : 'صح أم خطأ'}</span>
+                        </div>
+                        <div class="options-list">
+                            ${question.type === 'mcq' ? `
+                                <div class="option-item ${question.correctAnswer === '1' ? 'correct-option' : ''}">1. ${question.option1}</div>
+                                <div class="option-item ${question.correctAnswer === '2' ? 'correct-option' : ''}">2. ${question.option2}</div>
+                                ${question.option3 ? `<div class="option-item ${question.correctAnswer === '3' ? 'correct-option' : ''}">3. ${question.option3}</div>` : ''}
+                                ${question.option4 ? `<div class="option-item ${question.correctAnswer === '4' ? 'correct-option' : ''}">4. ${question.option4}</div>` : ''}
+                            ` : `
+                                <div class="option-item ${question.correctAnswer === 'true' ? 'correct-option' : ''}">${question.correctAnswer === 'true' ? 'صح' : 'خطأ'}</div>
+                            `}
+                        </div>
+                        <div class="question-actions">
+                            <button class="btn-admin btn-admin-warning btn-sm" onclick="editQuestion('${question.id}')">
+                                <i class="fas fa-edit"></i> تعديل
+                            </button>
+                            <button class="btn-admin btn-admin-danger btn-sm" onclick="deleteQuestion('${question.id}')">
+                                <i class="fas fa-trash"></i> حذف
+                            </button>
+                        </div>
+                    `;
+                    
+                    elements.allQuestionsList.appendChild(questionItem);
+                }
+            });
+            
+            if (!hasQuestions) {
+                elements.allQuestionsList.innerHTML = `
+                    <div class="no-questions">
+                        <i class="fas fa-info-circle"></i>
+                        <h3>لا توجد أسئلة متطابقة مع معايير التصفية</h3>
+                        <p>حاول تغيير معايير التصفية أو أضف أسئلة جديدة.</p>
+                    </div>
+                `;
             }
+        }, (error) => {
+            console.error('خطأ في تحميل الأسئلة للإدارة:', error);
+            showError('حدث خطأ في تحميل الأسئلة للإدارة');
+        });
     } catch (error) {
-        console.error('خطأ في حذف المادة:', error);
-        showError('حدث خطأ أثناء حذف المادة');
+        console.error('خطأ في دالة تحميل الأسئلة للإدارة:', error);
+        showError('حدث خطأ في تحميل الأسئلة للإدارة');
     }
 }
 
-// حذف درس
-function deleteLesson(lessonId) {
+// إضافة سؤال جديد
+function addNewQuestion() {
     try {
-        if (confirm('هل أنت متأكد من حذف هذا الدرس؟ سيتم حذف جميع الأسئلة المرتبطة به.')) {
-            database.ref('lessons/' + lessonId).remove()
-                .then(() => {
-                    alert('تم حذف الدرس بنجاح');
-                    loadLessonsForAdmin();
-                    createAutoBackup();
-                })
-                .catch(error => {
-                    alert('حدث خطأ أثناء حذف الدرس: ' + error.message);
-                });
+        const questionText = document.getElementById('question-text').value.trim();
+        const questionType = document.getElementById('question-type').value;
+        const category = document.getElementById('question-category').value.trim();
+        const difficulty = document.getElementById('question-difficulty').value;
+        const grade = document.getElementById('question-grade').value;
+        const section = document.getElementById('question-section').value;
+        const subject = document.getElementById('question-subject').value;
+        const lesson = document.getElementById('question-lesson').value;
+        const sublesson = document.getElementById('question-sublesson').value;
+        
+        if (!questionText) {
+            alert('الرجاء إدخال نص السؤال');
+            return;
         }
-    } catch (error) {
-        console.error('خطأ في حذف الدرس:', error);
-        showError('حدث خطأ أثناء حذف الدرس');
-    }
-}
-
-// حذف قسم فرعي
-function deleteSublesson(sublessonId) {
-    try {
-        if (confirm('هل أنت متأكد من حذف هذا القسم الفرعي؟ سيتم حذف جميع الأسئلة المرتبطة به.')) {
-            database.ref('sublessons/' + sublessonId).remove()
-                .then(() => {
-                    alert('تم حذف القسم الفرعي بنجاح');
-                    loadSublessonsForAdmin();
-                    createAutoBackup();
-                })
-                .catch(error => {
-                    alert('حدث خطأ أثناء حذف القسم الفرعي: ' + error.message);
-                });
+        
+        if (!grade) {
+            alert('الرجاء اختيار الصف');
+            return;
         }
+        
+        if (!section) {
+            alert('الرجاء اختيار قسم');
+            return;
+        }
+        
+        let correctAnswer;
+        let questionData = {
+            text: questionText,
+            type: questionType,
+            category: category || '',
+            difficulty,
+            grade,
+            section,
+            subject: subject || '',
+            lesson: lesson || '',
+            sublesson: sublesson || '',
+            createdBy: currentUser ? currentUser.id : 'system',
+            createdByName: currentUser ? currentUser.name : 'النظام',
+            createdAt: new Date().toISOString()
+        };
+        
+        if (questionType === 'mcq') {
+            correctAnswer = document.getElementById('correct-answer').value;
+            
+            for (let i = 1; i <= 4; i++) {
+                const optionValue = document.getElementById(`option${i}`).value.trim();
+                if (optionValue) {
+                    questionData[`option${i}`] = optionValue;
+                }
+            }
+            
+            if (!questionData.option1 || !questionData.option2) {
+                alert('الرجاء إدخال خيارين على الأقل');
+                return;
+            }
+        } else {
+            correctAnswer = document.getElementById('tf-correct-answer').value;
+        }
+        
+        questionData.correctAnswer = correctAnswer;
+        
+        const questionsRef = database.ref(DB.questions);
+        questionsRef.push(questionData)
+            .then(() => {
+                alert('تمت إضافة السؤال بنجاح');
+                
+                document.getElementById('question-text').value = '';
+                document.getElementById('question-category').value = '';
+                for (let i = 1; i <= 4; i++) {
+                    document.getElementById(`option${i}`).value = '';
+                }
+                document.getElementById('question-lesson').value = '';
+                document.getElementById('question-sublesson').value = '';
+                
+                loadAllQuestions();
+                createAutoBackup();
+                
+                // تسجيل نشاط إضافة سؤال
+                if (currentUser) {
+                    addUserActivity(currentUser.id, 'add_question', 'أضاف سؤال جديد', {
+                        questionText: questionText.substring(0, 50)
+                    });
+                }
+            })
+            .catch(error => {
+                alert('حدث خطأ أثناء إضافة السؤال: ' + error.message);
+            });
     } catch (error) {
-        console.error('خطأ في حذف القسم الفرعي:', error);
-        showError('حدث خطأ أثناء حذف القسم الفرعي');
+        console.error('خطأ في إضافة سؤال جديد:', error);
+        alert('حدث خطأ أثناء إضافة السؤال');
     }
 }
 
@@ -2167,11 +2650,16 @@ function deleteSublesson(sublessonId) {
 function deleteQuestion(questionId) {
     try {
         if (confirm('هل أنت متأكد من حذف هذا السؤال؟')) {
-            database.ref('questions/' + questionId).remove()
+            database.ref(DB.questions + '/' + questionId).remove()
                 .then(() => {
                     alert('تم حذف السؤال بنجاح');
                     loadAllQuestions();
                     createAutoBackup();
+                    
+                    // تسجيل نشاط حذف سؤال
+                    if (currentUser) {
+                        addUserActivity(currentUser.id, 'delete_question', 'حذف سؤال');
+                    }
                 })
                 .catch(error => {
                     alert('حدث خطأ أثناء حذف السؤال: ' + error.message);
@@ -2179,16 +2667,14 @@ function deleteQuestion(questionId) {
         }
     } catch (error) {
         console.error('خطأ في حذف السؤال:', error);
-        showError('حدث خطأ أثناء حذف السؤال');
+        alert('حدث خطأ أثناء حذف السؤال');
     }
 }
 
 // تعديل سؤال
 function editQuestion(questionId) {
     try {
-        currentEditingQuestionId = questionId;
-        
-        const questionsRef = database.ref('questions/' + questionId);
+        const questionsRef = database.ref(DB.questions + '/' + questionId);
         questionsRef.once('value', (snapshot) => {
             if (snapshot.exists()) {
                 const question = snapshot.val();
@@ -2231,6 +2717,7 @@ function editQuestion(questionId) {
                                         <label>إجابة صحيحة</label>
                                     </div>
                                 </div>
+                                ${question.option3 ? `
                                 <div class="edit-option-item">
                                     <label>الخيار الثالث:</label>
                                     <input type="text" id="edit-option3" class="form-control" value="${question.option3 || ''}">
@@ -2239,6 +2726,8 @@ function editQuestion(questionId) {
                                         <label>إجابة صحيحة</label>
                                     </div>
                                 </div>
+                                ` : ''}
+                                ${question.option4 ? `
                                 <div class="edit-option-item">
                                     <label>الخيار الرابع:</label>
                                     <input type="text" id="edit-option4" class="form-control" value="${question.option4 || ''}">
@@ -2247,6 +2736,7 @@ function editQuestion(questionId) {
                                         <label>إجابة صحيحة</label>
                                     </div>
                                 </div>
+                                ` : ''}
                             </div>
                         </div>
                         
@@ -2261,25 +2751,11 @@ function editQuestion(questionId) {
                         </div>
                         
                         <div class="form-group">
-                            <label for="edit-question-category">التصنيف:</label>
-                            <input type="text" id="edit-question-category" class="form-control" value="${question.category || ''}" placeholder="تصنيف السؤال (اختياري)">
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="edit-question-difficulty">مستوى الصعوبة:</label>
-                            <select id="edit-question-difficulty" class="form-control">
-                                <option value="easy" ${question.difficulty === 'easy' ? 'selected' : ''}>سهل</option>
-                                <option value="medium" ${question.difficulty === 'medium' ? 'selected' : ''}>متوسط</option>
-                                <option value="hard" ${question.difficulty === 'hard' ? 'selected' : ''}>صعب</option>
-                            </select>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="edit-question-year">الصف الدراسي:</label>
-                            <select id="edit-question-year" class="form-control">
-                                <option value="secondary1" ${question.year === 'secondary1' ? 'selected' : ''}>الصف الأول الثانوي</option>
-                                <option value="secondary2" ${question.year === 'secondary2' ? 'selected' : ''}>الصف الثاني الثانوي</option>
-                                <option value="secondary3" ${question.year === 'secondary3' ? 'selected' : ''}>الصف الثالث الثانوي</option>
+                            <label for="edit-question-grade">الصف الدراسي:</label>
+                            <select id="edit-question-grade" class="form-control">
+                                ${grades.map(grade => `
+                                    <option value="${grade.id}" ${question.grade === grade.id ? 'selected' : ''}>${grade.name}</option>
+                                `).join('')}
                             </select>
                         </div>
                         
@@ -2298,26 +2774,6 @@ function editQuestion(questionId) {
                                 <option value="">اختر المادة</option>
                                 ${subjects.map(subject => `
                                     <option value="${subject.id}" ${question.subject === subject.id ? 'selected' : ''}>${subject.name}</option>
-                                `).join('')}
-                            </select>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="edit-question-lesson">الدرس:</label>
-                            <select id="edit-question-lesson" class="form-control">
-                                <option value="">اختر الدرس (اختياري)</option>
-                                ${lessons.map(lesson => `
-                                    <option value="${lesson.id}" ${question.lesson === lesson.id ? 'selected' : ''}>${lesson.name}</option>
-                                `).join('')}
-                            </select>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="edit-question-sublesson">القسم الفرعي:</label>
-                            <select id="edit-question-sublesson" class="form-control">
-                                <option value="">اختر القسم الفرعي (اختياري)</option>
-                                ${sublessons.map(sublesson => `
-                                    <option value="${sublesson.id}" ${question.sublesson === sublesson.id ? 'selected' : ''}>${sublesson.name}</option>
                                 `).join('')}
                             </select>
                         </div>
@@ -2372,23 +2828,13 @@ function editQuestion(questionId) {
                         elements.overlay.classList.remove('active');
                     }
                 });
-                
-                editModal.addEventListener('keypress', function(e) {
-                    if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') {
-                        e.preventDefault();
-                        saveQuestionEdit(questionId, editModal);
-                    }
-                });
             } else {
                 alert('لم يتم العثور على السؤال');
             }
-        }, (error) => {
-            console.error('خطأ في تحميل السؤال للتعديل:', error);
-            alert('حدث خطأ في تحميل السؤال للتعديل');
         });
     } catch (error) {
-        console.error('خطأ في دالة تعديل السؤال:', error);
-        showError('حدث خطأ في تعديل السؤال');
+        console.error('خطأ في تعديل السؤال:', error);
+        alert('حدث خطأ في تعديل السؤال');
     }
 }
 
@@ -2397,16 +2843,17 @@ function saveQuestionEdit(questionId, editModal) {
     try {
         const questionText = editModal.querySelector('#edit-question-text').value.trim();
         const questionType = editModal.querySelector('#edit-question-type').value;
-        const category = editModal.querySelector('#edit-question-category').value.trim();
-        const difficulty = editModal.querySelector('#edit-question-difficulty').value;
-        const year = editModal.querySelector('#edit-question-year').value;
+        const grade = editModal.querySelector('#edit-question-grade').value;
         const section = editModal.querySelector('#edit-question-section').value;
         const subject = editModal.querySelector('#edit-question-subject').value;
-        const lesson = editModal.querySelector('#edit-question-lesson').value;
-        const sublesson = editModal.querySelector('#edit-question-sublesson').value;
         
         if (!questionText) {
             alert('الرجاء إدخال نص السؤال');
+            return;
+        }
+        
+        if (!grade) {
+            alert('الرجاء اختيار الصف');
             return;
         }
         
@@ -2419,13 +2866,10 @@ function saveQuestionEdit(questionId, editModal) {
         let questionData = {
             text: questionText,
             type: questionType,
-            category: category || '',
-            difficulty,
-            year,
+            grade,
             section,
             subject: subject || '',
-            lesson: lesson || '',
-            sublesson: sublesson || '',
+            updatedBy: currentUser ? currentUser.id : 'system',
             updatedAt: new Date().toISOString()
         };
         
@@ -2433,7 +2877,7 @@ function saveQuestionEdit(questionId, editModal) {
             correctAnswer = editModal.querySelector('input[name="edit-correct-answer"]:checked')?.value;
             
             for (let i = 1; i <= 4; i++) {
-                const optionValue = editModal.querySelector(`#edit-option${i}`).value.trim();
+                const optionValue = editModal.querySelector(`#edit-option${i}`)?.value.trim();
                 if (optionValue) {
                     questionData[`option${i}`] = optionValue;
                 }
@@ -2454,13 +2898,18 @@ function saveQuestionEdit(questionId, editModal) {
         
         questionData.correctAnswer = correctAnswer;
         
-        database.ref('questions/' + questionId).update(questionData)
+        database.ref(DB.questions + '/' + questionId).update(questionData)
             .then(() => {
                 alert('تم تحديث السؤال بنجاح');
                 document.body.removeChild(editModal);
                 elements.overlay.classList.remove('active');
                 loadAllQuestions();
                 createAutoBackup();
+                
+                // تسجيل نشاط تعديل سؤال
+                if (currentUser) {
+                    addUserActivity(currentUser.id, 'edit_question', 'عدل سؤال');
+                }
             })
             .catch(error => {
                 alert('حدث خطأ أثناء تحديث السؤال: ' + error.message);
@@ -2468,6 +2917,383 @@ function saveQuestionEdit(questionId, editModal) {
     } catch (error) {
         console.error('خطأ في حفظ تعديل السؤال:', error);
         alert('حدث خطأ أثناء حفظ التعديلات');
+    }
+}
+
+// =============================================
+// دوال إدارة الصفوف
+// =============================================
+
+// عرض الصفوف في لوحة الإدارة
+function loadGradesForAdmin() {
+    try {
+        const gradesList = document.getElementById('grades-list');
+        if (!gradesList) return;
+        
+        gradesList.innerHTML = '';
+        
+        if (grades.length > 0) {
+            grades.sort((a, b) => (a.order || 999) - (b.order || 999));
+            
+            grades.forEach(grade => {
+                const gradeItem = document.createElement('div');
+                gradeItem.className = 'item-card';
+                
+                // عرض خصائص التصميم
+                const designInfo = [];
+                if (grade.borderRadius) designInfo.push(`الحواف: ${grade.borderRadius}`);
+                if (grade.shadow) designInfo.push(`الظل: ${grade.shadow}`);
+                if (grade.hoverEffect) designInfo.push(`التحويم: ${grade.hoverEffect}`);
+                
+                gradeItem.innerHTML = `
+                    <h4><i class="fas ${grade.icon || 'fa-graduation-cap'}"></i> ${grade.name}</h4>
+                    <div class="item-meta">
+                        <span><i class="fas fa-sort-numeric-up"></i> الترتيب: ${grade.order || 1}</span>
+                        <span><i class="fas fa-paint-brush"></i> ${designInfo.join(' • ')}</span>
+                    </div>
+                    <p>${grade.description || ''}</p>
+                    <div class="item-actions">
+                        <button class="btn-admin btn-admin-warning btn-sm" onclick="editGrade('${grade.id}')">
+                            <i class="fas fa-edit"></i> تعديل
+                        </button>
+                        <button class="btn-admin btn-admin-danger btn-sm" onclick="deleteGrade('${grade.id}')">
+                            <i class="fas fa-trash"></i> حذف
+                        </button>
+                    </div>
+                `;
+                
+                gradesList.appendChild(gradeItem);
+            });
+        } else {
+            gradesList.innerHTML = `
+                <div class="no-questions">
+                    <i class="fas fa-info-circle"></i>
+                    <h3>لا توجد صفوف دراسية</h3>
+                    <p>أضف صفوفاً جديدة من النموذج أعلاه.</p>
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('خطأ في تحميل الصفوف للإدارة:', error);
+    }
+}
+
+// إضافة صف جديد مع حقول التصميم
+function addNewGrade() {
+    try {
+        const gradeName = document.getElementById('new-grade-name').value.trim();
+        const gradeDescription = document.getElementById('new-grade-description').value.trim();
+        const gradeOrder = parseInt(document.getElementById('new-grade-order').value) || 1;
+        const gradeIcon = document.getElementById('new-grade-icon').value;
+        
+        // حقول التصميم
+        const borderRadius = document.getElementById('new-grade-border-radius').value;
+        const shadow = document.getElementById('new-grade-shadow').value;
+        const border = document.getElementById('new-grade-border').value;
+        const hoverEffect = document.getElementById('new-grade-hover-effect').value;
+        const padding = document.getElementById('new-grade-padding').value;
+        const animation = document.getElementById('new-grade-animation').value;
+        const bgStyle = document.getElementById('new-grade-bg-style').value;
+        const textColor = document.getElementById('new-grade-text-color').value;
+        const iconColor = document.getElementById('new-grade-icon-color').value;
+        
+        if (!gradeName) {
+            alert('الرجاء إدخال اسم الصف');
+            return;
+        }
+        
+        const gradeData = {
+            name: gradeName,
+            description: gradeDescription,
+            order: gradeOrder,
+            icon: gradeIcon,
+            borderRadius: borderRadius,
+            shadow: shadow,
+            border: border,
+            hoverEffect: hoverEffect,
+            padding: padding,
+            animation: animation,
+            bgStyle: bgStyle,
+            textColor: textColor,
+            iconColor: iconColor,
+            createdBy: currentUser ? currentUser.id : 'system',
+            createdAt: new Date().toISOString()
+        };
+        
+        const gradesRef = database.ref(DB.grades);
+        gradesRef.push(gradeData)
+            .then(() => {
+                alert('تمت إضافة الصف بنجاح');
+                
+                document.getElementById('new-grade-name').value = '';
+                document.getElementById('new-grade-description').value = '';
+                document.getElementById('new-grade-order').value = '1';
+                
+                loadGradesForAdmin();
+                createAutoBackup();
+                
+                // تسجيل نشاط إضافة صف
+                if (currentUser) {
+                    addUserActivity(currentUser.id, 'add_grade', 'أضاف صف جديد: ' + gradeName);
+                }
+            })
+            .catch(error => {
+                alert('حدث خطأ أثناء إضافة الصف: ' + error.message);
+            });
+    } catch (error) {
+        console.error('خطأ في إضافة صف جديد:', error);
+        alert('حدث خطأ أثناء إضافة الصف');
+    }
+}
+
+// تعديل صف
+function editGrade(gradeId) {
+    try {
+        const grade = grades.find(g => g.id === gradeId);
+        if (!grade) {
+            alert('لم يتم العثور على الصف');
+            return;
+        }
+        
+        const editModal = document.createElement('div');
+        editModal.className = 'edit-modal';
+        editModal.id = 'edit-grade-modal';
+        editModal.innerHTML = `
+            <div class="modal-box">
+                <h3><i class="fas fa-edit"></i> تعديل الصف</h3>
+                
+                <div class="form-group">
+                    <label for="edit-grade-name">اسم الصف:</label>
+                    <input type="text" id="edit-grade-name" class="form-control" value="${grade.name}">
+                </div>
+                
+                <div class="form-group">
+                    <label for="edit-grade-description">وصف الصف:</label>
+                    <textarea id="edit-grade-description" class="form-control">${grade.description || ''}</textarea>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="edit-grade-icon">أيقونة الصف:</label>
+                        <select id="edit-grade-icon" class="form-control">
+                            <option value="fa-graduation-cap" ${grade.icon === 'fa-graduation-cap' ? 'selected' : ''}>قبعة تخرج</option>
+                            <option value="fa-book" ${grade.icon === 'fa-book' ? 'selected' : ''}>كتاب</option>
+                            <option value="fa-school" ${grade.icon === 'fa-school' ? 'selected' : ''}>مدرسة</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-grade-order">ترتيب الصف:</label>
+                        <input type="number" id="edit-grade-order" class="form-control" value="${grade.order || 1}" min="1">
+                    </div>
+                </div>
+                
+                <div class="modal-buttons">
+                    <button class="btn-admin" id="save-grade-edit-btn">
+                        <i class="fas fa-save"></i> حفظ التعديلات
+                    </button>
+                    <button class="btn btn-secondary" id="cancel-grade-edit-btn">
+                        <i class="fas fa-times"></i> إلغاء
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(editModal);
+        editModal.style.display = 'flex';
+        elements.overlay.classList.add('active');
+        
+        const saveBtn = editModal.querySelector('#save-grade-edit-btn');
+        const cancelBtn = editModal.querySelector('#cancel-grade-edit-btn');
+        
+        saveBtn.addEventListener('click', function() {
+            const gradeName = editModal.querySelector('#edit-grade-name').value.trim();
+            const gradeDescription = editModal.querySelector('#edit-grade-description').value.trim();
+            const gradeIcon = editModal.querySelector('#edit-grade-icon').value;
+            const gradeOrder = parseInt(editModal.querySelector('#edit-grade-order').value) || 1;
+            
+            if (!gradeName) {
+                alert('الرجاء إدخال اسم الصف');
+                return;
+            }
+            
+            const gradeData = {
+                name: gradeName,
+                description: gradeDescription,
+                icon: gradeIcon,
+                order: gradeOrder,
+                updatedBy: currentUser ? currentUser.id : 'system',
+                updatedAt: new Date().toISOString()
+            };
+            
+            database.ref(DB.grades + '/' + gradeId).update(gradeData)
+                .then(() => {
+                    alert('تم تحديث الصف بنجاح');
+                    document.body.removeChild(editModal);
+                    elements.overlay.classList.remove('active');
+                    loadGradesForAdmin();
+                    createAutoBackup();
+                    
+                    // تسجيل نشاط تعديل صف
+                    if (currentUser) {
+                        addUserActivity(currentUser.id, 'edit_grade', 'عدل صف: ' + gradeName);
+                    }
+                })
+                .catch(error => {
+                    alert('حدث خطأ أثناء تحديث الصف: ' + error.message);
+                });
+        });
+        
+        cancelBtn.addEventListener('click', function() {
+            document.body.removeChild(editModal);
+            elements.overlay.classList.remove('active');
+        });
+        
+        editModal.addEventListener('click', function(e) {
+            if (e.target === editModal) {
+                document.body.removeChild(editModal);
+                elements.overlay.classList.remove('active');
+            }
+        });
+    } catch (error) {
+        console.error('خطأ في تعديل الصف:', error);
+        alert('حدث خطأ في تعديل الصف');
+    }
+}
+
+// حذف صف
+function deleteGrade(gradeId) {
+    try {
+        if (confirm('هل أنت متأكد من حذف هذا الصف؟ سيتم حذف جميع الأقسام والأسئلة المرتبطة به.')) {
+            database.ref(DB.grades + '/' + gradeId).remove()
+                .then(() => {
+                    alert('تم حذف الصف بنجاح');
+                    loadGradesForAdmin();
+                    createAutoBackup();
+                    
+                    // تسجيل نشاط حذف صف
+                    if (currentUser) {
+                        addUserActivity(currentUser.id, 'delete_grade', 'حذف صف');
+                    }
+                })
+                .catch(error => {
+                    alert('حدث خطأ أثناء حذف الصف: ' + error.message);
+                });
+        }
+    } catch (error) {
+        console.error('خطأ في حذف الصف:', error);
+        alert('حدث خطأ أثناء حذف الصف');
+    }
+}
+
+// =============================================
+// دوال إدارة الأقسام
+// =============================================
+
+// عرض الأقسام في لوحة الإدارة
+function loadSectionsForAdmin() {
+    try {
+        const sectionsList = document.getElementById('sections-list');
+        if (!sectionsList) return;
+        
+        sectionsList.innerHTML = '';
+        
+        if (sections.length > 0) {
+            sections.sort((a, b) => (a.order || 999) - (b.order || 999));
+            
+            sections.forEach(section => {
+                const gradeNames = section.grades ? 
+                    section.grades.map(g => grades.find(grade => grade.id === g)?.name || g).join('، ') : 
+                    'لم يتم تحديد صفوف';
+                
+                const sectionItem = document.createElement('div');
+                sectionItem.className = 'item-card';
+                
+                sectionItem.innerHTML = `
+                    <h4><i class="fas ${section.icon || 'fa-layer-group'}"></i> ${section.name}</h4>
+                    <div class="item-meta">
+                        <span><i class="fas fa-sort-numeric-up"></i> الترتيب: ${section.order || 1}</span>
+                        <span><i class="fas fa-graduation-cap"></i> الصفوف: ${gradeNames}</span>
+                    </div>
+                    <p>${section.description || ''}</p>
+                    <div class="item-actions">
+                        <button class="btn-admin btn-admin-warning btn-sm" onclick="editSection('${section.id}')">
+                            <i class="fas fa-edit"></i> تعديل
+                        </button>
+                        <button class="btn-admin btn-admin-danger btn-sm" onclick="deleteSection('${section.id}')">
+                            <i class="fas fa-trash"></i> حذف
+                        </button>
+                    </div>
+                `;
+                
+                sectionsList.appendChild(sectionItem);
+            });
+        } else {
+            sectionsList.innerHTML = `
+                <div class="no-questions">
+                    <i class="fas fa-info-circle"></i>
+                    <h3>لا توجد أقسام</h3>
+                    <p>أضف أقساماً جديدة من النموذج أعلاه.</p>
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('خطأ في تحميل الأقسام للإدارة:', error);
+    }
+}
+
+// إضافة قسم جديد
+function addNewSection() {
+    try {
+        const sectionName = elements.newSectionName.value.trim();
+        const sectionDescription = elements.newSectionDescription.value.trim();
+        const sectionOrder = parseInt(elements.newSectionOrder.value) || 1;
+        
+        const selectedGrades = Array.from(document.querySelectorAll('input[name="section-grades"]:checked')).map(cb => cb.value);
+        
+        if (!sectionName) {
+            alert('الرجاء إدخال اسم القسم');
+            return;
+        }
+        
+        if (selectedGrades.length === 0) {
+            alert('الرجاء اختيار صف واحد على الأقل');
+            return;
+        }
+        
+        const sectionData = {
+            name: sectionName,
+            description: sectionDescription,
+            order: sectionOrder,
+            grades: selectedGrades,
+            createdBy: currentUser ? currentUser.id : 'system',
+            createdByName: currentUser ? currentUser.name : 'النظام',
+            createdAt: new Date().toISOString()
+        };
+        
+        const sectionsRef = database.ref(DB.sections);
+        sectionsRef.push(sectionData)
+            .then(() => {
+                alert('تمت إضافة القسم بنجاح');
+                
+                elements.newSectionName.value = '';
+                elements.newSectionDescription.value = '';
+                elements.newSectionOrder.value = '1';
+                document.querySelectorAll('input[name="section-grades"]').forEach(cb => cb.checked = false);
+                
+                loadSectionsForAdmin();
+                createAutoBackup();
+                
+                // تسجيل نشاط إضافة قسم
+                if (currentUser) {
+                    addUserActivity(currentUser.id, 'add_section', 'أضاف قسم جديد: ' + sectionName);
+                }
+            })
+            .catch(error => {
+                alert('حدث خطأ أثناء إضافة القسم: ' + error.message);
+            });
+    } catch (error) {
+        console.error('خطأ في إضافة قسم جديد:', error);
+        alert('حدث خطأ أثناء إضافة القسم');
     }
 }
 
@@ -2479,6 +3305,11 @@ function editSection(sectionId) {
             alert('لم يتم العثور على القسم');
             return;
         }
+        
+        const gradeCheckboxes = grades.map(grade => {
+            const checked = section.grades && section.grades.includes(grade.id) ? 'checked' : '';
+            return `<label><input type="checkbox" name="edit-section-grades" value="${grade.id}" ${checked}> ${grade.name}</label>`;
+        }).join('');
         
         const editModal = document.createElement('div');
         editModal.className = 'edit-modal';
@@ -2494,29 +3325,18 @@ function editSection(sectionId) {
                 
                 <div class="form-group">
                     <label for="edit-section-description">وصف القسم:</label>
-                    <textarea id="edit-section-description" class="form-control">${section.description}</textarea>
+                    <textarea id="edit-section-description" class="form-control">${section.description || ''}</textarea>
                 </div>
                 
                 <div class="form-group">
-                    <label for="edit-section-icon">أيقونة القسم:</label>
-                    <select id="edit-section-icon" class="form-control">
-                        <option value="fas fa-book" ${section.icon === 'fas fa-book' ? 'selected' : ''}>كتاب</option>
-                        <option value="fas fa-calculator" ${section.icon === 'fas fa-calculator' ? 'selected' : ''}>آلة حاسبة</option>
-                        <option value="fas fa-flask" ${section.icon === 'fas fa-flask' ? 'selected' : ''}>مختبر</option>
-                        <option value="fas fa-globe" ${section.icon === 'fas fa-globe' ? 'selected' : ''}>عالم</option>
-                        <option value="fas fa-history" ${section.icon === 'fas fa-history' ? 'selected' : ''}>تاريخ</option>
-                        <option value="fas fa-quran" ${section.icon === 'fas fa-quran' ? 'selected' : ''}>قرآن</option>
-                        <option value="fas fa-language" ${section.icon === 'fas fa-language' ? 'selected' : ''}>لغة</option>
-                        <option value="fas fa-atom" ${section.icon === 'fas fa-atom' ? 'selected' : ''}>علوم</option>
-                    </select>
+                    <label for="edit-section-order">ترتيب القسم:</label>
+                    <input type="number" id="edit-section-order" class="form-control" value="${section.order || 1}" min="1">
                 </div>
                 
                 <div class="form-group">
                     <label>الصفوف المرتبطة:</label>
                     <div class="grades-checkboxes">
-                        <label><input type="checkbox" name="edit-section-grades" value="secondary1" ${section.grades && section.grades.includes('secondary1') ? 'checked' : ''}> الصف الأول الثانوي</label>
-                        <label><input type="checkbox" name="edit-section-grades" value="secondary2" ${section.grades && section.grades.includes('secondary2') ? 'checked' : ''}> الصف الثاني الثانوي</label>
-                        <label><input type="checkbox" name="edit-section-grades" value="secondary3" ${section.grades && section.grades.includes('secondary3') ? 'checked' : ''}> الصف الثالث الثانوي</label>
+                        ${gradeCheckboxes}
                     </div>
                 </div>
                 
@@ -2541,7 +3361,7 @@ function editSection(sectionId) {
         saveBtn.addEventListener('click', function() {
             const sectionName = editModal.querySelector('#edit-section-name').value.trim();
             const sectionDescription = editModal.querySelector('#edit-section-description').value.trim();
-            const sectionIcon = editModal.querySelector('#edit-section-icon').value;
+            const sectionOrder = parseInt(editModal.querySelector('#edit-section-order').value) || 1;
             const selectedGrades = Array.from(editModal.querySelectorAll('input[name="edit-section-grades"]:checked')).map(cb => cb.value);
             
             if (!sectionName) {
@@ -2557,18 +3377,24 @@ function editSection(sectionId) {
             const sectionData = {
                 name: sectionName,
                 description: sectionDescription,
-                icon: sectionIcon,
+                order: sectionOrder,
                 grades: selectedGrades,
+                updatedBy: currentUser ? currentUser.id : 'system',
                 updatedAt: new Date().toISOString()
             };
             
-            database.ref('sections/' + sectionId).update(sectionData)
+            database.ref(DB.sections + '/' + sectionId).update(sectionData)
                 .then(() => {
                     alert('تم تحديث القسم بنجاح');
                     document.body.removeChild(editModal);
                     elements.overlay.classList.remove('active');
                     loadSectionsForAdmin();
                     createAutoBackup();
+                    
+                    // تسجيل نشاط تعديل قسم
+                    if (currentUser) {
+                        addUserActivity(currentUser.id, 'edit_section', 'عدل قسم: ' + sectionName);
+                    }
                 })
                 .catch(error => {
                     alert('حدث خطأ أثناء تحديث القسم: ' + error.message);
@@ -2589,6 +3415,139 @@ function editSection(sectionId) {
     } catch (error) {
         console.error('خطأ في تعديل القسم:', error);
         alert('حدث خطأ في تعديل القسم');
+    }
+}
+
+// حذف قسم
+function deleteSection(sectionId) {
+    try {
+        if (confirm('هل أنت متأكد من حذف هذا القسم؟ سيتم حذف جميع المواد والأسئلة المرتبطة به.')) {
+            database.ref(DB.sections + '/' + sectionId).remove()
+                .then(() => {
+                    alert('تم حذف القسم بنجاح');
+                    loadSectionsForAdmin();
+                    createAutoBackup();
+                    
+                    // تسجيل نشاط حذف قسم
+                    if (currentUser) {
+                        addUserActivity(currentUser.id, 'delete_section', 'حذف قسم');
+                    }
+                })
+                .catch(error => {
+                    alert('حدث خطأ أثناء حذف القسم: ' + error.message);
+                });
+        }
+    } catch (error) {
+        console.error('خطأ في حذف القسم:', error);
+        alert('حدث خطأ أثناء حذف القسم');
+    }
+}
+
+// =============================================
+// دوال إدارة المواد
+// =============================================
+
+// عرض المواد في لوحة الإدارة
+function loadSubjectsForAdmin() {
+    try {
+        const subjectsList = document.getElementById('subjects-list');
+        if (!subjectsList) return;
+        
+        subjectsList.innerHTML = '';
+        
+        if (subjects.length > 0) {
+            subjects.sort((a, b) => (a.order || 999) - (b.order || 999));
+            
+            subjects.forEach(subject => {
+                const sectionName = sections.find(s => s.id === subject.sectionId)?.name || subject.sectionId;
+                
+                const subjectItem = document.createElement('div');
+                subjectItem.className = 'item-card';
+                
+                subjectItem.innerHTML = `
+                    <h4><i class="fas ${subject.icon || 'fa-book'}"></i> ${subject.name}</h4>
+                    <div class="item-meta">
+                        <span><i class="fas fa-sort-numeric-up"></i> الترتيب: ${subject.order || 1}</span>
+                        <span><i class="fas fa-layer-group"></i> ${sectionName}</span>
+                    </div>
+                    <p>${subject.description || ''}</p>
+                    <div class="item-actions">
+                        <button class="btn-admin btn-admin-warning btn-sm" onclick="editSubject('${subject.id}')">
+                            <i class="fas fa-edit"></i> تعديل
+                        </button>
+                        <button class="btn-admin btn-admin-danger btn-sm" onclick="deleteSubject('${subject.id}')">
+                            <i class="fas fa-trash"></i> حذف
+                        </button>
+                    </div>
+                `;
+                
+                subjectsList.appendChild(subjectItem);
+            });
+        } else {
+            subjectsList.innerHTML = `
+                <div class="no-questions">
+                    <i class="fas fa-info-circle"></i>
+                    <h3>لا توجد مواد</h3>
+                    <p>أضف مواداً جديدة من النموذج أعلاه.</p>
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('خطأ في تحميل المواد للإدارة:', error);
+    }
+}
+
+// إضافة مادة جديدة
+function addNewSubject() {
+    try {
+        const subjectName = elements.newSubjectName.value.trim();
+        const subjectDescription = elements.newSubjectDescription.value.trim();
+        const subjectOrder = parseInt(elements.newSubjectOrder.value) || 1;
+        const subjectSection = elements.newSubjectSection.value;
+        
+        if (!subjectName) {
+            alert('الرجاء إدخال اسم المادة');
+            return;
+        }
+        
+        if (!subjectSection) {
+            alert('الرجاء اختيار قسم');
+            return;
+        }
+        
+        const subjectData = {
+            name: subjectName,
+            description: subjectDescription,
+            order: subjectOrder,
+            sectionId: subjectSection,
+            createdBy: currentUser ? currentUser.id : 'system',
+            createdByName: currentUser ? currentUser.name : 'النظام',
+            createdAt: new Date().toISOString()
+        };
+        
+        const subjectsRef = database.ref(DB.subjects);
+        subjectsRef.push(subjectData)
+            .then(() => {
+                alert('تمت إضافة المادة بنجاح');
+                
+                elements.newSubjectName.value = '';
+                elements.newSubjectDescription.value = '';
+                elements.newSubjectOrder.value = '1';
+                
+                loadSubjectsForAdmin();
+                createAutoBackup();
+                
+                // تسجيل نشاط إضافة مادة
+                if (currentUser) {
+                    addUserActivity(currentUser.id, 'add_subject', 'أضاف مادة جديدة: ' + subjectName);
+                }
+            })
+            .catch(error => {
+                alert('حدث خطأ أثناء إضافة المادة: ' + error.message);
+            });
+    } catch (error) {
+        console.error('خطأ في إضافة مادة جديدة:', error);
+        alert('حدث خطأ أثناء إضافة المادة');
     }
 }
 
@@ -2615,7 +3574,7 @@ function editSubject(subjectId) {
                 
                 <div class="form-group">
                     <label for="edit-subject-description">وصف المادة:</label>
-                    <textarea id="edit-subject-description" class="form-control">${subject.description}</textarea>
+                    <textarea id="edit-subject-description" class="form-control">${subject.description || ''}</textarea>
                 </div>
                 
                 <div class="form-group">
@@ -2628,25 +3587,8 @@ function editSubject(subjectId) {
                 </div>
                 
                 <div class="form-group">
-                    <label for="edit-subject-icon">أيقونة المادة:</label>
-                    <select id="edit-subject-icon" class="form-control">
-                        <option value="fa-atom" ${subject.icon === 'fa-atom' ? 'selected' : ''}>علوم (ذرة)</option>
-                        <option value="fa-flask" ${subject.icon === 'fa-flask' ? 'selected' : ''}>كيمياء</option>
-                        <option value="fa-calculator" ${subject.icon === 'fa-calculator' ? 'selected' : ''}>رياضيات</option>
-                        <option value="fa-dna" ${subject.icon === 'fa-dna' ? 'selected' : ''}>أحياء</option>
-                        <option value="fa-language" ${subject.icon === 'fa-language' ? 'selected' : ''}>لغة عربية</option>
-                        <option value="fa-book-open" ${subject.icon === 'fa-book-open' ? 'selected' : ''}>أدب</option>
-                        <option value="fa-pray" ${subject.icon === 'fa-pray' ? 'selected' : ''}>فقه</option>
-                        <option value="fa-quran" ${subject.icon === 'fa-quran' ? 'selected' : ''}>قرآن</option>
-                        <option value="fa-hands-praying" ${subject.icon === 'fa-hands-praying' ? 'selected' : ''}>حديث</option>
-                        <option value="fa-mosque" ${subject.icon === 'fa-mosque' ? 'selected' : ''}>توحيد</option>
-                        <option value="fa-globe" ${subject.icon === 'fa-globe' ? 'selected' : ''}>جغرافيا</option>
-                        <option value="fa-history" ${subject.icon === 'fa-history' ? 'selected' : ''}>تاريخ</option>
-                        <option value="fa-brain" ${subject.icon === 'fa-brain' ? 'selected' : ''}>منطق</option>
-                        <option value="fa-scroll" ${subject.icon === 'fa-scroll' ? 'selected' : ''}>بلاغة</option>
-                        <option value="fa-comment" ${subject.icon === 'fa-comment' ? 'selected' : ''}>إنشاء</option>
-                        <option value="fa-infinity" ${subject.icon === 'fa-infinity' ? 'selected' : ''}>هندسة</option>
-                    </select>
+                    <label for="edit-subject-order">ترتيب المادة:</label>
+                    <input type="number" id="edit-subject-order" class="form-control" value="${subject.order || 1}" min="1">
                 </div>
                 
                 <div class="modal-buttons">
@@ -2671,7 +3613,7 @@ function editSubject(subjectId) {
             const subjectName = editModal.querySelector('#edit-subject-name').value.trim();
             const subjectDescription = editModal.querySelector('#edit-subject-description').value.trim();
             const subjectSection = editModal.querySelector('#edit-subject-section').value;
-            const subjectIcon = editModal.querySelector('#edit-subject-icon').value;
+            const subjectOrder = parseInt(editModal.querySelector('#edit-subject-order').value) || 1;
             
             if (!subjectName) {
                 alert('الرجاء إدخال اسم المادة');
@@ -2687,17 +3629,23 @@ function editSubject(subjectId) {
                 name: subjectName,
                 description: subjectDescription,
                 sectionId: subjectSection,
-                icon: subjectIcon,
+                order: subjectOrder,
+                updatedBy: currentUser ? currentUser.id : 'system',
                 updatedAt: new Date().toISOString()
             };
             
-            database.ref('subjects/' + subjectId).update(subjectData)
+            database.ref(DB.subjects + '/' + subjectId).update(subjectData)
                 .then(() => {
                     alert('تم تحديث المادة بنجاح');
                     document.body.removeChild(editModal);
                     elements.overlay.classList.remove('active');
                     loadSubjectsForAdmin();
                     createAutoBackup();
+                    
+                    // تسجيل نشاط تعديل مادة
+                    if (currentUser) {
+                        addUserActivity(currentUser.id, 'edit_subject', 'عدل مادة: ' + subjectName);
+                    }
                 })
                 .catch(error => {
                     alert('حدث خطأ أثناء تحديث المادة: ' + error.message);
@@ -2718,6 +3666,139 @@ function editSubject(subjectId) {
     } catch (error) {
         console.error('خطأ في تعديل المادة:', error);
         alert('حدث خطأ في تعديل المادة');
+    }
+}
+
+// حذف مادة
+function deleteSubject(subjectId) {
+    try {
+        if (confirm('هل أنت متأكد من حذف هذه المادة؟ سيتم حذف جميع الأسئلة المرتبطة بها.')) {
+            database.ref(DB.subjects + '/' + subjectId).remove()
+                .then(() => {
+                    alert('تم حذف المادة بنجاح');
+                    loadSubjectsForAdmin();
+                    createAutoBackup();
+                    
+                    // تسجيل نشاط حذف مادة
+                    if (currentUser) {
+                        addUserActivity(currentUser.id, 'delete_subject', 'حذف مادة');
+                    }
+                })
+                .catch(error => {
+                    alert('حدث خطأ أثناء حذف المادة: ' + error.message);
+                });
+        }
+    } catch (error) {
+        console.error('خطأ في حذف المادة:', error);
+        alert('حدث خطأ أثناء حذف المادة');
+    }
+}
+
+// =============================================
+// دوال إدارة الدروس
+// =============================================
+
+// عرض الدروس في لوحة الإدارة
+function loadLessonsForAdmin() {
+    try {
+        const lessonsList = document.getElementById('lessons-list');
+        if (!lessonsList) return;
+        
+        lessonsList.innerHTML = '';
+        
+        if (lessons.length > 0) {
+            lessons.sort((a, b) => (a.order || 999) - (b.order || 999));
+            
+            lessons.forEach(lesson => {
+                const subjectName = subjects.find(s => s.id === lesson.subjectId)?.name || lesson.subjectId;
+                
+                const lessonItem = document.createElement('div');
+                lessonItem.className = 'item-card';
+                
+                lessonItem.innerHTML = `
+                    <h4><i class="fas ${lesson.icon || 'fa-book-open'}"></i> ${lesson.name}</h4>
+                    <div class="item-meta">
+                        <span><i class="fas fa-sort-numeric-up"></i> الترتيب: ${lesson.order || 1}</span>
+                        <span><i class="fas fa-book"></i> ${subjectName}</span>
+                    </div>
+                    <p>${lesson.description || ''}</p>
+                    <div class="item-actions">
+                        <button class="btn-admin btn-admin-warning btn-sm" onclick="editLesson('${lesson.id}')">
+                            <i class="fas fa-edit"></i> تعديل
+                        </button>
+                        <button class="btn-admin btn-admin-danger btn-sm" onclick="deleteLesson('${lesson.id}')">
+                            <i class="fas fa-trash"></i> حذف
+                        </button>
+                    </div>
+                `;
+                
+                lessonsList.appendChild(lessonItem);
+            });
+        } else {
+            lessonsList.innerHTML = `
+                <div class="no-questions">
+                    <i class="fas fa-info-circle"></i>
+                    <h3>لا توجد دروس</h3>
+                    <p>أضف دروساً جديدة من النموذج أعلاه.</p>
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('خطأ في تحميل الدروس للإدارة:', error);
+    }
+}
+
+// إضافة درس جديد
+function addNewLesson() {
+    try {
+        const lessonName = elements.newLessonName.value.trim();
+        const lessonDescription = elements.newLessonDescription.value.trim();
+        const lessonOrder = parseInt(elements.newLessonOrder.value) || 1;
+        const lessonSubject = elements.newLessonSubject.value;
+        
+        if (!lessonName) {
+            alert('الرجاء إدخال اسم الدرس');
+            return;
+        }
+        
+        if (!lessonSubject) {
+            alert('الرجاء اختيار المادة');
+            return;
+        }
+        
+        const lessonData = {
+            name: lessonName,
+            description: lessonDescription,
+            order: lessonOrder,
+            subjectId: lessonSubject,
+            createdBy: currentUser ? currentUser.id : 'system',
+            createdByName: currentUser ? currentUser.name : 'النظام',
+            createdAt: new Date().toISOString()
+        };
+        
+        const lessonsRef = database.ref(DB.lessons);
+        lessonsRef.push(lessonData)
+            .then(() => {
+                alert('تمت إضافة الدرس بنجاح');
+                
+                elements.newLessonName.value = '';
+                elements.newLessonDescription.value = '';
+                elements.newLessonOrder.value = '1';
+                
+                loadLessonsForAdmin();
+                createAutoBackup();
+                
+                // تسجيل نشاط إضافة درس
+                if (currentUser) {
+                    addUserActivity(currentUser.id, 'add_lesson', 'أضاف درس جديد: ' + lessonName);
+                }
+            })
+            .catch(error => {
+                alert('حدث خطأ أثناء إضافة الدرس: ' + error.message);
+            });
+    } catch (error) {
+        console.error('خطأ في إضافة درس جديد:', error);
+        alert('حدث خطأ أثناء إضافة الدرس');
     }
 }
 
@@ -2744,7 +3825,7 @@ function editLesson(lessonId) {
                 
                 <div class="form-group">
                     <label for="edit-lesson-description">وصف الدرس:</label>
-                    <textarea id="edit-lesson-description" class="form-control">${lesson.description}</textarea>
+                    <textarea id="edit-lesson-description" class="form-control">${lesson.description || ''}</textarea>
                 </div>
                 
                 <div class="form-group">
@@ -2753,20 +3834,6 @@ function editLesson(lessonId) {
                         ${subjects.map(subject => `
                             <option value="${subject.id}" ${lesson.subjectId === subject.id ? 'selected' : ''}>${subject.name}</option>
                         `).join('')}
-                    </select>
-                </div>
-                
-                <div class="form-group">
-                    <label for="edit-lesson-icon">أيقونة الدرس:</label>
-                    <select id="edit-lesson-icon" class="form-control">
-                        <option value="fa-book-open" ${lesson.icon === 'fa-book-open' ? 'selected' : ''}>كتاب مفتوح</option>
-                        <option value="fa-chalkboard-teacher" ${lesson.icon === 'fa-chalkboard-teacher' ? 'selected' : ''}>سبورة</option>
-                        <option value="fa-graduation-cap" ${lesson.icon === 'fa-graduation-cap' ? 'selected' : ''}>تخرج</option>
-                        <option value="fa-lightbulb" ${lesson.icon === 'fa-lightbulb' ? 'selected' : ''}>فكرة</option>
-                        <option value="fa-puzzle-piece" ${lesson.icon === 'fa-puzzle-piece' ? 'selected' : ''}>أحجية</option>
-                        <option value="fa-brain" ${lesson.icon === 'fa-brain' ? 'selected' : ''}>عقل</option>
-                        <option value="fa-flask" ${lesson.icon === 'fa-flask' ? 'selected' : ''}>تجربة</option>
-                        <option value="fa-calculator" ${lesson.icon === 'fa-calculator' ? 'selected' : ''}>حساب</option>
                     </select>
                 </div>
                 
@@ -2797,7 +3864,6 @@ function editLesson(lessonId) {
             const lessonName = editModal.querySelector('#edit-lesson-name').value.trim();
             const lessonDescription = editModal.querySelector('#edit-lesson-description').value.trim();
             const lessonSubject = editModal.querySelector('#edit-lesson-subject').value;
-            const lessonIcon = editModal.querySelector('#edit-lesson-icon').value;
             const lessonOrder = parseInt(editModal.querySelector('#edit-lesson-order').value) || 1;
             
             if (!lessonName) {
@@ -2814,18 +3880,23 @@ function editLesson(lessonId) {
                 name: lessonName,
                 description: lessonDescription,
                 subjectId: lessonSubject,
-                icon: lessonIcon,
                 order: lessonOrder,
+                updatedBy: currentUser ? currentUser.id : 'system',
                 updatedAt: new Date().toISOString()
             };
             
-            database.ref('lessons/' + lessonId).update(lessonData)
+            database.ref(DB.lessons + '/' + lessonId).update(lessonData)
                 .then(() => {
                     alert('تم تحديث الدرس بنجاح');
                     document.body.removeChild(editModal);
                     elements.overlay.classList.remove('active');
                     loadLessonsForAdmin();
                     createAutoBackup();
+                    
+                    // تسجيل نشاط تعديل درس
+                    if (currentUser) {
+                        addUserActivity(currentUser.id, 'edit_lesson', 'عدل درس: ' + lessonName);
+                    }
                 })
                 .catch(error => {
                     alert('حدث خطأ أثناء تحديث الدرس: ' + error.message);
@@ -2846,6 +3917,139 @@ function editLesson(lessonId) {
     } catch (error) {
         console.error('خطأ في تعديل الدرس:', error);
         alert('حدث خطأ في تعديل الدرس');
+    }
+}
+
+// حذف درس
+function deleteLesson(lessonId) {
+    try {
+        if (confirm('هل أنت متأكد من حذف هذا الدرس؟ سيتم حذف جميع الأسئلة المرتبطة به.')) {
+            database.ref(DB.lessons + '/' + lessonId).remove()
+                .then(() => {
+                    alert('تم حذف الدرس بنجاح');
+                    loadLessonsForAdmin();
+                    createAutoBackup();
+                    
+                    // تسجيل نشاط حذف درس
+                    if (currentUser) {
+                        addUserActivity(currentUser.id, 'delete_lesson', 'حذف درس');
+                    }
+                })
+                .catch(error => {
+                    alert('حدث خطأ أثناء حذف الدرس: ' + error.message);
+                });
+        }
+    } catch (error) {
+        console.error('خطأ في حذف الدرس:', error);
+        alert('حدث خطأ أثناء حذف الدرس');
+    }
+}
+
+// =============================================
+// دوال إدارة الأقسام الفرعية
+// =============================================
+
+// عرض الأقسام الفرعية في لوحة الإدارة
+function loadSublessonsForAdmin() {
+    try {
+        const sublessonsList = document.getElementById('sublessons-list');
+        if (!sublessonsList) return;
+        
+        sublessonsList.innerHTML = '';
+        
+        if (sublessons.length > 0) {
+            sublessons.sort((a, b) => (a.order || 999) - (b.order || 999));
+            
+            sublessons.forEach(sublesson => {
+                const lessonName = lessons.find(l => l.id === sublesson.lessonId)?.name || sublesson.lessonId;
+                
+                const sublessonItem = document.createElement('div');
+                sublessonItem.className = 'item-card';
+                
+                sublessonItem.innerHTML = `
+                    <h4><i class="fas ${sublesson.icon || 'fa-folder'}"></i> ${sublesson.name}</h4>
+                    <div class="item-meta">
+                        <span><i class="fas fa-sort-numeric-up"></i> الترتيب: ${sublesson.order || 1}</span>
+                        <span><i class="fas fa-book-open"></i> ${lessonName}</span>
+                    </div>
+                    <p>${sublesson.description || ''}</p>
+                    <div class="item-actions">
+                        <button class="btn-admin btn-admin-warning btn-sm" onclick="editSublesson('${sublesson.id}')">
+                            <i class="fas fa-edit"></i> تعديل
+                        </button>
+                        <button class="btn-admin btn-admin-danger btn-sm" onclick="deleteSublesson('${sublesson.id}')">
+                            <i class="fas fa-trash"></i> حذف
+                        </button>
+                    </div>
+                `;
+                
+                sublessonsList.appendChild(sublessonItem);
+            });
+        } else {
+            sublessonsList.innerHTML = `
+                <div class="no-questions">
+                    <i class="fas fa-info-circle"></i>
+                    <h3>لا توجد أقسام فرعية</h3>
+                    <p>أضف أقساماً فرعية جديدة من النموذج أعلاه.</p>
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('خطأ في تحميل الأقسام الفرعية للإدارة:', error);
+    }
+}
+
+// إضافة قسم فرعي جديد
+function addNewSublesson() {
+    try {
+        const sublessonName = elements.newSublessonName.value.trim();
+        const sublessonDescription = elements.newSublessonDescription.value.trim();
+        const sublessonOrder = parseInt(elements.newSublessonOrder.value) || 1;
+        const sublessonLesson = elements.newSublessonLesson.value;
+        
+        if (!sublessonName) {
+            alert('الرجاء إدخال اسم القسم الفرعي');
+            return;
+        }
+        
+        if (!sublessonLesson) {
+            alert('الرجاء اختيار الدرس');
+            return;
+        }
+        
+        const sublessonData = {
+            name: sublessonName,
+            description: sublessonDescription,
+            order: sublessonOrder,
+            lessonId: sublessonLesson,
+            createdBy: currentUser ? currentUser.id : 'system',
+            createdByName: currentUser ? currentUser.name : 'النظام',
+            createdAt: new Date().toISOString()
+        };
+        
+        const sublessonsRef = database.ref(DB.sublessons);
+        sublessonsRef.push(sublessonData)
+            .then(() => {
+                alert('تمت إضافة القسم الفرعي بنجاح');
+                
+                elements.newSublessonName.value = '';
+                elements.newSublessonDescription.value = '';
+                elements.newSublessonOrder.value = '1';
+                
+                loadSublessonsForAdmin();
+                createAutoBackup();
+                
+                // تسجيل نشاط إضافة قسم فرعي
+                if (currentUser) {
+                    addUserActivity(currentUser.id, 'add_sublesson', 'أضاف قسم فرعي جديد: ' + sublessonName);
+                }
+            })
+            .catch(error => {
+                alert('حدث خطأ أثناء إضافة القسم الفرعي: ' + error.message);
+            });
+    } catch (error) {
+        console.error('خطأ في إضافة قسم فرعي جديد:', error);
+        alert('حدث خطأ أثناء إضافة القسم الفرعي');
     }
 }
 
@@ -2872,7 +4076,7 @@ function editSublesson(sublessonId) {
                 
                 <div class="form-group">
                     <label for="edit-sublesson-description">وصف القسم الفرعي:</label>
-                    <textarea id="edit-sublesson-description" class="form-control">${sublesson.description}</textarea>
+                    <textarea id="edit-sublesson-description" class="form-control">${sublesson.description || ''}</textarea>
                 </div>
                 
                 <div class="form-group">
@@ -2881,20 +4085,6 @@ function editSublesson(sublessonId) {
                         ${lessons.map(lesson => `
                             <option value="${lesson.id}" ${sublesson.lessonId === lesson.id ? 'selected' : ''}>${lesson.name}</option>
                         `).join('')}
-                    </select>
-                </div>
-                
-                <div class="form-group">
-                    <label for="edit-sublesson-icon">أيقونة القسم الفرعي:</label>
-                    <select id="edit-sublesson-icon" class="form-control">
-                        <option value="fa-folder" ${sublesson.icon === 'fa-folder' ? 'selected' : ''}>مجلد</option>
-                        <option value="fa-folder-open" ${sublesson.icon === 'fa-folder-open' ? 'selected' : ''}>مجلد مفتوح</option>
-                        <option value="fa-bookmark" ${sublesson.icon === 'fa-bookmark' ? 'selected' : ''}>إشارة مرجعية</option>
-                        <option value="fa-tag" ${sublesson.icon === 'fa-tag' ? 'selected' : ''}>علامة</option>
-                        <option value="fa-hashtag" ${sublesson.icon === 'fa-hashtag' ? 'selected' : ''}>هاشتاج</option>
-                        <option value="fa-layer-group" ${sublesson.icon === 'fa-layer-group' ? 'selected' : ''}>طبقات</option>
-                        <option value="fa-sitemap" ${sublesson.icon === 'fa-sitemap' ? 'selected' : ''}>هيكل</option>
-                        <option value="fa-project-diagram" ${sublesson.icon === 'fa-project-diagram' ? 'selected' : ''}>مخطط</option>
                     </select>
                 </div>
                 
@@ -2925,7 +4115,6 @@ function editSublesson(sublessonId) {
             const sublessonName = editModal.querySelector('#edit-sublesson-name').value.trim();
             const sublessonDescription = editModal.querySelector('#edit-sublesson-description').value.trim();
             const sublessonLesson = editModal.querySelector('#edit-sublesson-lesson').value;
-            const sublessonIcon = editModal.querySelector('#edit-sublesson-icon').value;
             const sublessonOrder = parseInt(editModal.querySelector('#edit-sublesson-order').value) || 1;
             
             if (!sublessonName) {
@@ -2942,18 +4131,23 @@ function editSublesson(sublessonId) {
                 name: sublessonName,
                 description: sublessonDescription,
                 lessonId: sublessonLesson,
-                icon: sublessonIcon,
                 order: sublessonOrder,
+                updatedBy: currentUser ? currentUser.id : 'system',
                 updatedAt: new Date().toISOString()
             };
             
-            database.ref('sublessons/' + sublessonId).update(sublessonData)
+            database.ref(DB.sublessons + '/' + sublessonId).update(sublessonData)
                 .then(() => {
                     alert('تم تحديث القسم الفرعي بنجاح');
                     document.body.removeChild(editModal);
                     elements.overlay.classList.remove('active');
                     loadSublessonsForAdmin();
                     createAutoBackup();
+                    
+                    // تسجيل نشاط تعديل قسم فرعي
+                    if (currentUser) {
+                        addUserActivity(currentUser.id, 'edit_sublesson', 'عدل قسم فرعي: ' + sublessonName);
+                    }
                 })
                 .catch(error => {
                     alert('حدث خطأ أثناء تحديث القسم الفرعي: ' + error.message);
@@ -2977,27 +4171,68 @@ function editSublesson(sublessonId) {
     }
 }
 
-// عرض رسالة عدم وجود إختبارات
-function showNoQuestionsMessage() {
+// حذف قسم فرعي
+function deleteSublesson(sublessonId) {
     try {
-        elements.questionContainer.innerHTML = `
-            <div class="no-questions">
-                <i class="fas fa-info-circle"></i> لا توجد إختبارات متاحة حالياً للصف والقسم المحدد.
-            </div>
-        `;
-        elements.nextBtn.style.display = 'none';
-        elements.submitBtn.style.display = 'none';
+        if (confirm('هل أنت متأكد من حذف هذا القسم الفرعي؟ سيتم حذف جميع الأسئلة المرتبطة به.')) {
+            database.ref(DB.sublessons + '/' + sublessonId).remove()
+                .then(() => {
+                    alert('تم حذف القسم الفرعي بنجاح');
+                    loadSublessonsForAdmin();
+                    createAutoBackup();
+                    
+                    // تسجيل نشاط حذف قسم فرعي
+                    if (currentUser) {
+                        addUserActivity(currentUser.id, 'delete_sublesson', 'حذف قسم فرعي');
+                    }
+                })
+                .catch(error => {
+                    alert('حدث خطأ أثناء حذف القسم الفرعي: ' + error.message);
+                });
+        }
     } catch (error) {
-        console.error('خطأ في عرض رسالة عدم وجود أسئلة:', error);
+        console.error('خطأ في حذف القسم الفرعي:', error);
+        alert('حدث خطأ أثناء حذف القسم الفرعي');
     }
 }
 
-// عرض رسالة خطأ
-function showError(message) {
+// =============================================
+// دوال إعدادات النظام
+// =============================================
+
+// حفظ إعدادات النظام
+function saveSystemSettings() {
     try {
-        alert(message);
+        const examTime = parseInt(elements.examTime.value);
+        const examActive = elements.examStatus.checked;
+        
+        if (!examTime || examTime < 1) {
+            alert('الرجاء إدخال مدة اختبار صحيحة');
+            return;
+        }
+        
+        const examStatusRef = database.ref('examStatus');
+        examStatusRef.set({
+            active: examActive,
+            time: examTime,
+            updatedBy: currentUser ? currentUser.id : 'system',
+            updatedAt: new Date().toISOString()
+        })
+        .then(() => {
+            alert('تم حفظ الإعدادات بنجاح');
+            createAutoBackup();
+            
+            // تسجيل نشاط تعديل الإعدادات
+            if (currentUser) {
+                addUserActivity(currentUser.id, 'edit_settings', 'عدل إعدادات النظام');
+            }
+        })
+        .catch(error => {
+            alert('حدث خطأ أثناء حفظ الإعدادات: ' + error.message);
+        });
     } catch (error) {
-        console.error('خطأ في عرض رسالة الخطأ:', error);
+        console.error('خطأ في حفظ إعدادات النظام:', error);
+        alert('حدث خطأ أثناء حفظ الإعدادات');
     }
 }
 
@@ -3011,7 +4246,7 @@ function checkExamStatus() {
                 defaultExamTime = snapshot.val().time || 10;
                 
                 if (!examActive) {
-                    elements.yearSelectionContainer.innerHTML = `
+                    elements.gradeSelectionContainer.innerHTML = `
                         <div class="no-questions" style="grid-column: 1 / -1;">
                             <i class="fas fa-exclamation-triangle"></i> 
                             <h3>الاختبارات متوقفة حالياً</h3>
@@ -3033,350 +4268,11 @@ function checkExamStatus() {
     }
 }
 
-// إضافة سؤال جديد
-function addNewQuestion() {
-    try {
-        const questionText = document.getElementById('question-text').value.trim();
-        const questionType = document.getElementById('question-type').value;
-        const category = document.getElementById('question-category').value.trim();
-        const difficulty = document.getElementById('question-difficulty').value;
-        const year = document.getElementById('question-year').value;
-        const section = document.getElementById('question-section').value;
-        const subject = document.getElementById('question-subject').value;
-        const lesson = document.getElementById('question-lesson').value;
-        const sublesson = document.getElementById('question-sublesson').value;
-        
-        if (!questionText) {
-            alert('الرجاء إدخال نص السؤال');
-            return;
-        }
-        
-        if (!section) {
-            alert('الرجاء اختيار قسم');
-            return;
-        }
-        
-        let correctAnswer;
-        let questionData = {
-            text: questionText,
-            type: questionType,
-            category: category || '',
-            difficulty,
-            year,
-            section,
-            subject: subject || '',
-            lesson: lesson || '',
-            sublesson: sublesson || '',
-            createdAt: new Date().toISOString()
-        };
-        
-        if (questionType === 'mcq') {
-            correctAnswer = document.getElementById('correct-answer').value;
-            
-            for (let i = 1; i <= 4; i++) {
-                const optionValue = document.getElementById(`option${i}`).value.trim();
-                if (optionValue) {
-                    questionData[`option${i}`] = optionValue;
-                }
-            }
-            
-            if (!questionData.option1 || !questionData.option2) {
-                alert('الرجاء إدخال خيارين على الأقل');
-                return;
-            }
-        } else {
-            correctAnswer = document.getElementById('tf-correct-answer').value;
-        }
-        
-        questionData.correctAnswer = correctAnswer;
-        
-        const questionsRef = database.ref('questions');
-        questionsRef.push(questionData)
-            .then(() => {
-                alert('تمت إضافة السؤال بنجاح');
-                
-                document.getElementById('question-text').value = '';
-                document.getElementById('question-category').value = '';
-                for (let i = 1; i <= 4; i++) {
-                    document.getElementById(`option${i}`).value = '';
-                }
-                document.getElementById('question-lesson').value = '';
-                document.getElementById('question-sublesson').value = '';
-                
-                loadAllQuestions();
-                createAutoBackup();
-            })
-            .catch(error => {
-                alert('حدث خطأ أثناء إضافة السؤال: ' + error.message);
-            });
-    } catch (error) {
-        console.error('خطأ في إضافة سؤال جديد:', error);
-        alert('حدث خطأ أثناء إضافة السؤال');
-    }
-}
+// =============================================
+// دوال الإعلانات
+// =============================================
 
-// إضافة قسم جديد
-function addNewSection() {
-    try {
-        const sectionName = elements.newSectionName.value.trim();
-        const sectionDescription = elements.newSectionDescription.value.trim();
-        const sectionIcon = elements.newSectionIcon.value;
-        const selectedGrades = Array.from(document.querySelectorAll('input[name="section-grades"]:checked')).map(cb => cb.value);
-        
-        if (!sectionName) {
-            alert('الرجاء إدخال اسم القسم');
-            return;
-        }
-        
-        if (selectedGrades.length === 0) {
-            alert('الرجاء اختيار صف واحد على الأقل');
-            return;
-        }
-        
-        const sectionData = {
-            name: sectionName,
-            description: sectionDescription,
-            icon: sectionIcon,
-            grades: selectedGrades,
-            createdAt: new Date().toISOString()
-        };
-        
-        const sectionsRef = database.ref('sections');
-        sectionsRef.push(sectionData)
-            .then(() => {
-                alert('تمت إضافة القسم بنجاح');
-                
-                elements.newSectionName.value = '';
-                elements.newSectionDescription.value = '';
-                document.querySelectorAll('input[name="section-grades"]').forEach(cb => cb.checked = false);
-                
-                loadSectionsForAdmin();
-                createAutoBackup();
-            })
-            .catch(error => {
-                alert('حدث خطأ أثناء إضافة القسم: ' + error.message);
-            });
-    } catch (error) {
-        console.error('خطأ في إضافة قسم جديد:', error);
-        alert('حدث خطأ أثناء إضافة القسم');
-    }
-}
-
-// إضافة مادة جديدة
-function addNewSubject() {
-    try {
-        const subjectName = elements.newSubjectName.value.trim();
-        const subjectDescription = elements.newSubjectDescription.value.trim();
-        const subjectSection = elements.newSubjectSection.value;
-        const subjectIcon = elements.newSubjectIcon.value;
-        
-        if (!subjectName) {
-            alert('الرجاء إدخال اسم المادة');
-            return;
-        }
-        
-        if (!subjectSection) {
-            alert('الرجاء اختيار قسم');
-            return;
-        }
-        
-        const subjectData = {
-            name: subjectName,
-            description: subjectDescription,
-            sectionId: subjectSection,
-            icon: subjectIcon,
-            createdAt: new Date().toISOString()
-        };
-        
-        const subjectsRef = database.ref('subjects');
-        subjectsRef.push(subjectData)
-            .then(() => {
-                alert('تمت إضافة المادة بنجاح');
-                
-                elements.newSubjectName.value = '';
-                elements.newSubjectDescription.value = '';
-                
-                loadSubjectsForAdmin();
-                createAutoBackup();
-            })
-            .catch(error => {
-                alert('حدث خطأ أثناء إضافة المادة: ' + error.message);
-            });
-    } catch (error) {
-        console.error('خطأ في إضافة مادة جديدة:', error);
-        alert('حدث خطأ أثناء إضافة المادة');
-    }
-}
-
-// إضافة درس جديد
-function addNewLesson() {
-    try {
-        const lessonName = elements.newLessonName.value.trim();
-        const lessonDescription = elements.newLessonDescription.value.trim();
-        const lessonSubject = elements.newLessonSubject.value;
-        const lessonIcon = elements.newLessonIcon.value;
-        const lessonOrder = parseInt(elements.newLessonOrder.value) || 1;
-        
-        if (!lessonName) {
-            alert('الرجاء إدخال اسم الدرس');
-            return;
-        }
-        
-        if (!lessonSubject) {
-            alert('الرجاء اختيار المادة');
-            return;
-        }
-        
-        const lessonData = {
-            name: lessonName,
-            description: lessonDescription,
-            subjectId: lessonSubject,
-            icon: lessonIcon,
-            order: lessonOrder,
-            createdAt: new Date().toISOString()
-        };
-        
-        const lessonsRef = database.ref('lessons');
-        lessonsRef.push(lessonData)
-            .then(() => {
-                alert('تمت إضافة الدرس بنجاح');
-                
-                elements.newLessonName.value = '';
-                elements.newLessonDescription.value = '';
-                elements.newLessonOrder.value = '1';
-                
-                loadLessonsForAdmin();
-                createAutoBackup();
-            })
-            .catch(error => {
-                alert('حدث خطأ أثناء إضافة الدرس: ' + error.message);
-            });
-    } catch (error) {
-        console.error('خطأ في إضافة درس جديد:', error);
-        alert('حدث خطأ أثناء إضافة الدرس');
-    }
-}
-
-// إضافة قسم فرعي جديد
-function addNewSublesson() {
-    try {
-        const sublessonName = elements.newSublessonName.value.trim();
-        const sublessonDescription = elements.newSublessonDescription.value.trim();
-        const sublessonLesson = elements.newSublessonLesson.value;
-        const sublessonIcon = elements.newSublessonIcon.value;
-        const sublessonOrder = parseInt(elements.newSublessonOrder.value) || 1;
-        
-        if (!sublessonName) {
-            alert('الرجاء إدخال اسم القسم الفرعي');
-            return;
-        }
-        
-        if (!sublessonLesson) {
-            alert('الرجاء اختيار الدرس');
-            return;
-        }
-        
-        const sublessonData = {
-            name: sublessonName,
-            description: sublessonDescription,
-            lessonId: sublessonLesson,
-            icon: sublessonIcon,
-            order: sublessonOrder,
-            createdAt: new Date().toISOString()
-        };
-        
-        const sublessonsRef = database.ref('sublessons');
-        sublessonsRef.push(sublessonData)
-            .then(() => {
-                alert('تمت إضافة القسم الفرعي بنجاح');
-                
-                elements.newSublessonName.value = '';
-                elements.newSublessonDescription.value = '';
-                elements.newSublessonOrder.value = '1';
-                
-                loadSublessonsForAdmin();
-                createAutoBackup();
-            })
-            .catch(error => {
-                alert('حدث خطأ أثناء إضافة القسم الفرعي: ' + error.message);
-            });
-    } catch (error) {
-        console.error('خطأ في إضافة قسم فرعي جديد:', error);
-        alert('حدث خطأ أثناء إضافة القسم الفرعي');
-    }
-}
-
-// حفظ إعدادات النظام
-function saveSystemSettings() {
-    try {
-        const examTime = parseInt(elements.examTime.value);
-        const examActive = elements.examStatus.checked;
-        const newAdminPassword = elements.adminPasswordSetting.value;
-        
-        if (!examTime || examTime < 1) {
-            alert('الرجاء إدخال مدة اختبار صحيحة');
-            return;
-        }
-        
-        if (!newAdminPassword) {
-            alert('الرجاء إدخال كلمة مرور إدارية');
-            return;
-        }
-        
-        const examStatusRef = database.ref('examStatus');
-        examStatusRef.set({
-            active: examActive,
-            time: examTime
-        })
-        .then(() => {
-            adminPassword = newAdminPassword;
-            localStorage.setItem('adminPassword', newAdminPassword);
-            
-            alert('تم حفظ الإعدادات بنجاح');
-            createAutoBackup();
-        })
-        .catch(error => {
-            alert('حدث خطأ أثناء حفظ الإعدادات: ' + error.message);
-        });
-    } catch (error) {
-        console.error('خطأ في حفظ إعدادات النظام:', error);
-        alert('حدث خطأ أثناء حفظ الإعدادات');
-    }
-}
-
-// تبديل بين تبويبات لوحة التحكم
-function switchAdminTab(tabId) {
-    try {
-        elements.adminNavItems.forEach(t => t.classList.remove('active'));
-        elements.adminTabContents.forEach(c => c.classList.remove('active'));
-        
-        document.querySelector(`.admin-nav-item[data-tab="${tabId}"]`).classList.add('active');
-        const tabElement = document.getElementById(`${tabId}-tab`);
-        if (tabElement) {
-            tabElement.classList.add('active');
-            
-            if (tabId === 'manage-questions') {
-                loadAllQuestions();
-            } else if (tabId === 'lessons') {
-                loadLessonsForAdmin();
-            } else if (tabId === 'sublessons') {
-                loadSublessonsForAdmin();
-            } else if (tabId === 'sections') {
-                loadSectionsForAdmin();
-            } else if (tabId === 'subjects') {
-                loadSubjectsForAdmin();
-            } else if (tabId === 'user-analytics') {
-                updateUserAnalytics();
-            } else if (tabId === 'backup') {
-                updateLastBackupInfo();
-            }
-        }
-    } catch (error) {
-        console.error('خطأ في تبديل تبويبات لوحة التحكم:', error);
-    }
-}
-
-// إدارة الإعلانات
+// حفظ الإعلان
 function saveAd() {
     try {
         const title = elements.adTitleInput.value.trim();
@@ -3394,10 +4290,12 @@ function saveAd() {
             description,
             url,
             status,
+            createdBy: currentUser ? currentUser.id : 'system',
+            createdByName: currentUser ? currentUser.name : 'النظام',
             createdAt: new Date().toISOString()
         };
         
-        const adsRef = database.ref('ads');
+        const adsRef = database.ref(DB.ads);
         adsRef.set(adData)
             .then(() => {
                 alert('تم حفظ الإعلان بنجاح');
@@ -3407,6 +4305,11 @@ function saveAd() {
                 
                 loadAd();
                 createAutoBackup();
+                
+                // تسجيل نشاط تعديل الإعلان
+                if (currentUser) {
+                    addUserActivity(currentUser.id, 'edit_ad', 'عدل الإعلان');
+                }
             })
             .catch(error => {
                 alert('حدث خطأ أثناء حفظ الإعلان: ' + error.message);
@@ -3423,8 +4326,8 @@ function updateAdPreview() {
         const title = elements.adTitleInput.value || 'عنوان الإعلان';
         const description = elements.adDescriptionInput.value || 'وصف الإعلان سيظهر هنا';
         
-        elements.previewAdTitle.textContent = title;
-        elements.previewAdDescription.textContent = description;
+        if (elements.previewAdTitle) elements.previewAdTitle.textContent = title;
+        if (elements.previewAdDescription) elements.previewAdDescription.textContent = description;
     } catch (error) {
         console.error('خطأ في تحديث معاينة الإعلان:', error);
     }
@@ -3433,7 +4336,7 @@ function updateAdPreview() {
 // تحميل الإعلان
 function loadAd() {
     try {
-        const adsRef = database.ref('ads');
+        const adsRef = database.ref(DB.ads);
         adsRef.once('value', (snapshot) => {
             if (snapshot.exists()) {
                 const ad = snapshot.val();
@@ -3460,9 +4363,9 @@ function loadAd() {
 function displayAd(ad) {
     try {
         if (ad && ad.status === 'active') {
-            elements.adTitle.textContent = ad.title;
-            elements.adDescription.textContent = ad.description;
-            elements.adContainer.style.display = 'block';
+            if (elements.adTitle) elements.adTitle.textContent = ad.title;
+            if (elements.adDescription) elements.adDescription.textContent = ad.description;
+            if (elements.adContainer) elements.adContainer.style.display = 'block';
             
             if (elements.adTitleInput) {
                 elements.adTitleInput.value = ad.title;
@@ -3477,6 +4380,10 @@ function displayAd(ad) {
     }
 }
 
+// =============================================
+// دوال النسخ الاحتياطي
+// =============================================
+
 // النسخ الاحتياطي التلقائي
 function createAutoBackup() {
     try {
@@ -3486,21 +4393,19 @@ function createAutoBackup() {
         
         const backupData = {
             timestamp: new Date().toISOString(),
+            grades: grades,
             sections: sections,
             subjects: subjects,
             lessons: lessons,
             sublessons: sublessons,
-            userStats: {
-                totalVisits: userStats.totalVisits,
-                uniqueUsers: Array.from(userStats.uniqueUsers),
-                dailyActiveUsers: Array.from(userStats.dailyActiveUsers),
-                userSessions: userStats.userSessions,
-                activeUsers: Array.from(userStats.activeUsers),
-                permanentUsers: Array.from(userStats.permanentUsers),
-                userActivities: userStats.userActivities
+            admins: admins,
+            siteStats: {
+                totalVisits: siteStats.totalVisits,
+                uniqueUsers: siteStats.uniqueUsers,
+                dailyActiveUsers: siteStats.dailyActiveUsers,
+                userSessions: siteStats.userSessions
             },
             appSettings: {
-                adminPassword: adminPassword,
                 examActive: examActive,
                 defaultExamTime: defaultExamTime,
                 isDarkMode: isDarkMode,
@@ -3508,7 +4413,7 @@ function createAutoBackup() {
             }
         };
         
-        const questionsRef = database.ref('questions');
+        const questionsRef = database.ref(DB.questions);
         questionsRef.once('value', (snapshot) => {
             const questions = [];
             snapshot.forEach((childSnapshot) => {
@@ -3519,13 +4424,13 @@ function createAutoBackup() {
             
             backupData.questions = questions;
             
-            const adsRef = database.ref('ads');
+            const adsRef = database.ref(DB.ads);
             adsRef.once('value', (snapshot) => {
                 if (snapshot.exists()) {
                     backupData.ad = snapshot.val();
                 }
                 
-                const resultsRef = database.ref('quizResults');
+                const resultsRef = database.ref(DB.quizResults);
                 resultsRef.once('value', (snapshot) => {
                     const results = [];
                     snapshot.forEach((childSnapshot) => {
@@ -3542,14 +4447,8 @@ function createAutoBackup() {
                     console.log('تم إنشاء نسخة احتياطية تلقائية');
                     
                     updateLastBackupInfo();
-                }, (error) => {
-                    console.error('خطأ في الحصول على النتائج للنسخ الاحتياطي:', error);
                 });
-            }, (error) => {
-                console.error('خطأ في الحصول على الإعلانات للنسخ الاحتياطي:', error);
             });
-        }, (error) => {
-            console.error('خطأ في الحصول على الأسئلة للنسخ الاحتياطي:', error);
         });
     } catch (error) {
         console.error('خطأ في النسخ الاحتياطي التلقائي:', error);
@@ -3559,27 +4458,27 @@ function createAutoBackup() {
 // إنشاء نسخة احتياطية يدويًا
 function createManualBackup() {
     try {
-        elements.backupStatus.style.display = 'block';
-        elements.backupStatus.className = 'backup-status';
-        elements.backupStatus.innerHTML = '<i class="fas fa-spinner fa-spin"></i> جاري إنشاء النسخة الاحتياطية...';
+        if (elements.backupStatus) {
+            elements.backupStatus.style.display = 'block';
+            elements.backupStatus.className = 'backup-status';
+            elements.backupStatus.innerHTML = '<i class="fas fa-spinner fa-spin"></i> جاري إنشاء النسخة الاحتياطية...';
+        }
         
         const backupData = {
             timestamp: new Date().toISOString(),
+            grades: grades,
             sections: sections,
             subjects: subjects,
             lessons: lessons,
             sublessons: sublessons,
-            userStats: {
-                totalVisits: userStats.totalVisits,
-                uniqueUsers: Array.from(userStats.uniqueUsers),
-                dailyActiveUsers: Array.from(userStats.dailyActiveUsers),
-                userSessions: userStats.userSessions,
-                activeUsers: Array.from(userStats.activeUsers),
-                permanentUsers: Array.from(userStats.permanentUsers),
-                userActivities: userStats.userActivities
+            admins: admins,
+            siteStats: {
+                totalVisits: siteStats.totalVisits,
+                uniqueUsers: siteStats.uniqueUsers,
+                dailyActiveUsers: siteStats.dailyActiveUsers,
+                userSessions: siteStats.userSessions
             },
             appSettings: {
-                adminPassword: adminPassword,
                 examActive: examActive,
                 defaultExamTime: defaultExamTime,
                 isDarkMode: isDarkMode,
@@ -3587,7 +4486,7 @@ function createManualBackup() {
             }
         };
         
-        const questionsRef = database.ref('questions');
+        const questionsRef = database.ref(DB.questions);
         questionsRef.once('value', (snapshot) => {
             const questions = [];
             snapshot.forEach((childSnapshot) => {
@@ -3598,13 +4497,13 @@ function createManualBackup() {
             
             backupData.questions = questions;
             
-            const adsRef = database.ref('ads');
+            const adsRef = database.ref(DB.ads);
             adsRef.once('value', (snapshot) => {
                 if (snapshot.exists()) {
                     backupData.ad = snapshot.val();
                 }
                 
-                const resultsRef = database.ref('quizResults');
+                const resultsRef = database.ref(DB.quizResults);
                 resultsRef.once('value', (snapshot) => {
                     const results = [];
                     snapshot.forEach((childSnapshot) => {
@@ -3628,33 +4527,25 @@ function createManualBackup() {
                     localStorage.setItem('manualBackup', dataStr);
                     localStorage.setItem('lastBackup', new Date().toISOString());
                     
-                    elements.backupStatus.className = 'backup-status success';
-                    elements.backupStatus.innerHTML = '<i class="fas fa-check"></i> تم إنشاء النسخة الاحتياطية بنجاح!';
-                    
-                    setTimeout(() => {
-                        elements.backupStatus.style.display = 'none';
-                    }, 3000);
+                    if (elements.backupStatus) {
+                        elements.backupStatus.className = 'backup-status success';
+                        elements.backupStatus.innerHTML = '<i class="fas fa-check"></i> تم إنشاء النسخة الاحتياطية بنجاح!';
+                        
+                        setTimeout(() => {
+                            elements.backupStatus.style.display = 'none';
+                        }, 3000);
+                    }
                     
                     updateLastBackupInfo();
-                }, (error) => {
-                    console.error('خطأ في الحصول على النتائج للنسخ الاحتياطي:', error);
-                    elements.backupStatus.className = 'backup-status error';
-                    elements.backupStatus.innerHTML = '<i class="fas fa-times"></i> حدث خطأ أثناء إنشاء النسخة الاحتياطية';
                 });
-            }, (error) => {
-                console.error('خطأ في الحصول على الإعلانات للنسخ الاحتياطي:', error);
-                elements.backupStatus.className = 'backup-status error';
-                elements.backupStatus.innerHTML = '<i class="fas fa-times"></i> حدث خطأ أثناء إنشاء النسخة الاحتياطية';
             });
-        }, (error) => {
-            console.error('خطأ في الحصول على الأسئلة للنسخ الاحتياطي:', error);
-            elements.backupStatus.className = 'backup-status error';
-            elements.backupStatus.innerHTML = '<i class="fas fa-times"></i> حدث خطأ أثناء إنشاء النسخة الاحتياطية';
         });
     } catch (error) {
         console.error('خطأ في النسخ الاحتياطي اليدوي:', error);
-        elements.backupStatus.className = 'backup-status error';
-        elements.backupStatus.innerHTML = '<i class="fas fa-times"></i> حدث خطأ أثناء إنشاء النسخة الاحتياطية';
+        if (elements.backupStatus) {
+            elements.backupStatus.className = 'backup-status error';
+            elements.backupStatus.innerHTML = '<i class="fas fa-times"></i> حدث خطأ أثناء إنشاء النسخة الاحتياطية';
+        }
     }
 }
 
@@ -3662,7 +4553,7 @@ function createManualBackup() {
 function restoreBackup() {
     try {
         const fileInput = elements.backupFile;
-        if (!fileInput.files.length) {
+        if (!fileInput || !fileInput.files.length) {
             alert('الرجاء اختيار ملف النسخة الاحتياطية');
             return;
         }
@@ -3706,100 +4597,119 @@ function restoreBackupData(backupData) {
         
         const deletePromises = [];
         
-        deletePromises.push(database.ref('sections').remove());
-        deletePromises.push(database.ref('subjects').remove());
-        deletePromises.push(database.ref('lessons').remove());
-        deletePromises.push(database.ref('sublessons').remove());
-        deletePromises.push(database.ref('questions').remove());
-        deletePromises.push(database.ref('ads').remove());
-        deletePromises.push(database.ref('quizResults').remove());
+        deletePromises.push(database.ref(DB.grades).remove());
+        deletePromises.push(database.ref(DB.sections).remove());
+        deletePromises.push(database.ref(DB.subjects).remove());
+        deletePromises.push(database.ref(DB.lessons).remove());
+        deletePromises.push(database.ref(DB.sublessons).remove());
+        deletePromises.push(database.ref(DB.questions).remove());
+        deletePromises.push(database.ref(DB.ads).remove());
+        deletePromises.push(database.ref(DB.quizResults).remove());
+        deletePromises.push(database.ref(DB.admins).remove());
         
         Promise.all(deletePromises).then(() => {
             console.log('تم حذف جميع البيانات القديمة');
             
             const restorePromises = [];
             
+            if (backupData.grades && Array.isArray(backupData.grades)) {
+                backupData.grades.forEach(grade => {
+                    const gradeId = grade.id;
+                    const gradeData = { ...grade };
+                    delete gradeData.id;
+                    
+                    restorePromises.push(
+                        database.ref(DB.grades + '/' + gradeId).set(gradeData)
+                    );
+                });
+            }
+            
             if (backupData.sections && Array.isArray(backupData.sections)) {
-                console.log('جاري استعادة الأقسام:', backupData.sections.length);
                 backupData.sections.forEach(section => {
                     const sectionId = section.id;
                     const sectionData = { ...section };
                     delete sectionData.id;
                     
                     restorePromises.push(
-                        database.ref('sections/' + sectionId).set(sectionData)
+                        database.ref(DB.sections + '/' + sectionId).set(sectionData)
                     );
                 });
             }
             
             if (backupData.subjects && Array.isArray(backupData.subjects)) {
-                console.log('جاري استعادة المواد:', backupData.subjects.length);
                 backupData.subjects.forEach(subject => {
                     const subjectId = subject.id;
                     const subjectData = { ...subject };
                     delete subjectData.id;
                     
                     restorePromises.push(
-                        database.ref('subjects/' + subjectId).set(subjectData)
+                        database.ref(DB.subjects + '/' + subjectId).set(subjectData)
                     );
                 });
             }
             
             if (backupData.lessons && Array.isArray(backupData.lessons)) {
-                console.log('جاري استعادة الدروس:', backupData.lessons.length);
                 backupData.lessons.forEach(lesson => {
                     const lessonId = lesson.id;
                     const lessonData = { ...lesson };
                     delete lessonData.id;
                     
                     restorePromises.push(
-                        database.ref('lessons/' + lessonId).set(lessonData)
+                        database.ref(DB.lessons + '/' + lessonId).set(lessonData)
                     );
                 });
             }
             
             if (backupData.sublessons && Array.isArray(backupData.sublessons)) {
-                console.log('جاري استعادة الأقسام الفرعية:', backupData.sublessons.length);
                 backupData.sublessons.forEach(sublesson => {
                     const sublessonId = sublesson.id;
                     const sublessonData = { ...sublesson };
                     delete sublessonData.id;
                     
                     restorePromises.push(
-                        database.ref('sublessons/' + sublessonId).set(sublessonData)
+                        database.ref(DB.sublessons + '/' + sublessonId).set(sublessonData)
                     );
                 });
             }
             
             if (backupData.questions && Array.isArray(backupData.questions)) {
-                console.log('جاري استعادة الأسئلة:', backupData.questions.length);
                 backupData.questions.forEach(question => {
                     const questionId = question.id;
                     const questionData = { ...question };
                     delete questionData.id;
                     
                     restorePromises.push(
-                        database.ref('questions/' + questionId).set(questionData)
+                        database.ref(DB.questions + '/' + questionId).set(questionData)
                     );
                 });
             }
             
             if (backupData.ad) {
-                console.log('جاري استعادة الإعلانات');
                 restorePromises.push(
-                    database.ref('ads').set(backupData.ad)
+                    database.ref(DB.ads).set(backupData.ad)
                 );
             }
             
             if (backupData.quizResults && Array.isArray(backupData.quizResults)) {
-                console.log('جاري استعادة النتائج:', backupData.quizResults.length);
                 backupData.quizResults.forEach(result => {
                     const resultId = result.id;
                     const resultData = { ...result };
                     delete resultData.id;
                     
                     restorePromises.push(
-                        database.ref('quizResults/' + resultId).set(resultData)
+                        database.ref(DB.quizResults + '/' + resultId).set(resultData)
+                    );
+                });
+            }
+            
+            if (backupData.admins && Array.isArray(backupData.admins)) {
+                backupData.admins.forEach(admin => {
+                    const adminId = admin.id;
+                    const adminData = { ...admin };
+                    delete adminData.id;
+                    
+                    restorePromises.push(
+                        database.ref(DB.admins + '/' + adminId).set(adminData)
                     );
                 });
             }
@@ -3807,17 +4717,12 @@ function restoreBackupData(backupData) {
             Promise.all(restorePromises).then(() => {
                 console.log('تم استعادة جميع البيانات بنجاح');
                 
-                if (backupData.userStats) {
-                    localStorage.setItem('userStats', JSON.stringify(backupData.userStats));
-                    loadUserStats();
+                if (backupData.siteStats) {
+                    localStorage.setItem('siteStats', JSON.stringify(backupData.siteStats));
+                    loadSiteStats();
                 }
                 
                 if (backupData.appSettings) {
-                    if (backupData.appSettings.adminPassword) {
-                        adminPassword = backupData.appSettings.adminPassword;
-                        localStorage.setItem('adminPassword', backupData.appSettings.adminPassword);
-                    }
-                    
                     if (backupData.appSettings.examActive !== undefined) {
                         examActive = backupData.appSettings.examActive;
                     }
@@ -3871,7 +4776,7 @@ function restoreBackupData(backupData) {
 function updateLastBackupInfo() {
     try {
         const lastBackup = localStorage.getItem('lastBackup');
-        if (lastBackup) {
+        if (lastBackup && elements.lastBackupInfo) {
             const date = new Date(lastBackup);
             const formattedDate = date.toLocaleDateString('ar-SA', {
                 year: 'numeric',
@@ -3904,5 +4809,678 @@ function loadAutoBackupSetting() {
     }
 }
 
+// =============================================
+// دوال الحالة والحفظ
+// =============================================
+
+// استعادة الحالة المحفوظة
+function restoreSavedState() {
+    try {
+        if (savedState.selectedGrade) {
+            selectedGrade = savedState.selectedGrade;
+            
+            if (savedState.selectedSection) {
+                selectedSection = savedState.selectedSection;
+            }
+            
+            if (savedState.selectedSubject) {
+                selectedSubject = savedState.selectedSubject;
+            }
+            
+            if (savedState.selectedLesson) {
+                selectedLesson = savedState.selectedLesson;
+            }
+            
+            if (savedState.selectedSublesson) {
+                selectedSublesson = savedState.selectedSublesson;
+            }
+        }
+    } catch (error) {
+        console.error('خطأ في استعادة الحالة:', error);
+    }
+}
+
+// حفظ الحالة الحالية
+function saveCurrentState() {
+    try {
+        const state = {
+            user: currentUser ? { id: currentUser.id, name: currentUser.name } : null,
+            selectedGrade: selectedGrade,
+            selectedSection: selectedSection,
+            selectedSubject: selectedSubject,
+            selectedLesson: selectedLesson,
+            selectedSublesson: selectedSublesson
+        };
+        localStorage.setItem('quizState', JSON.stringify(state));
+    } catch (error) {
+        console.error('خطأ في حفظ الحالة:', error);
+    }
+}
+
+// =============================================
+// دوال تبديل التبويبات والنوافذ
+// =============================================
+
+// تبديل بين تبويبات لوحة التحكم
+function switchAdminTab(tabId) {
+    try {
+        elements.adminNavItems.forEach(t => t.classList.remove('active'));
+        elements.adminTabContents.forEach(c => c.classList.remove('active'));
+        
+        document.querySelector(`.admin-nav-item[data-tab="${tabId}"]`).classList.add('active');
+        const tabElement = document.getElementById(`${tabId}-tab`);
+        if (tabElement) {
+            tabElement.classList.add('active');
+            
+            if (tabId === 'manage-questions') {
+                loadAllQuestions();
+            } else if (tabId === 'grades') {
+                loadGradesForAdmin();
+            } else if (tabId === 'sections') {
+                loadSectionsForAdmin();
+            } else if (tabId === 'subjects') {
+                loadSubjectsForAdmin();
+            } else if (tabId === 'lessons') {
+                loadLessonsForAdmin();
+            } else if (tabId === 'sublessons') {
+                loadSublessonsForAdmin();
+            } else if (tabId === 'stats') {
+                updateSiteStats();
+            } else if (tabId === 'backup') {
+                updateLastBackupInfo();
+            } else if (tabId === 'admins') {
+                loadAdminsForAdmin();
+            }
+        }
+    } catch (error) {
+        console.error('خطأ في تبديل تبويبات لوحة التحكم:', error);
+    }
+}
+
+// إظهار نافذة تسجيل الدخول
+function showLoginModal() {
+    try {
+        elements.loginModal.style.display = 'flex';
+        elements.overlay.classList.add('active');
+        
+        // تفعيل تبويب تسجيل الدخول
+        elements.loginTabs.forEach(tab => {
+            tab.classList.remove('active');
+            if (tab.dataset.tab === 'login') {
+                tab.classList.add('active');
+            }
+        });
+        elements.loginForm.classList.add('active');
+        elements.registerForm.classList.remove('active');
+        
+        elements.loginEmail.value = '';
+        elements.loginPassword.value = '';
+        elements.loginError.style.display = 'none';
+        elements.registerError.style.display = 'none';
+    } catch (error) {
+        console.error('خطأ في إظهار نافذة تسجيل الدخول:', error);
+    }
+}
+
+// إغلاق نافذة تسجيل الدخول
+function closeLoginModal() {
+    try {
+        elements.loginModal.style.display = 'none';
+        elements.overlay.classList.remove('active');
+    } catch (error) {
+        console.error('خطأ في إغلاق نافذة تسجيل الدخول:', error);
+    }
+}
+
+// =============================================
+// دوال إحصائيات الموقع
+// =============================================
+
+// تحديث إحصائيات الموقع
+function updateSiteStats() {
+    try {
+        // إحصائيات الزيارات
+        const totalVisits = siteStats.totalVisits || 0;
+        const uniqueUsers = siteStats.uniqueUsers?.length || 0;
+        const dailyActive = siteStats.dailyActiveUsers?.length || 0;
+        
+        let avgSession = 0;
+        if (siteStats.userSessions?.length > 0) {
+            const total = siteStats.userSessions.reduce((sum, s) => sum + (s.count || 0), 0);
+            avgSession = Math.round(total / siteStats.userSessions.length);
+        }
+        
+        if (elements.totalVisits) elements.totalVisits.textContent = totalVisits;
+        if (elements.uniqueUsers) elements.uniqueUsers.textContent = uniqueUsers;
+        if (elements.dailyActive) elements.dailyActive.textContent = dailyActive;
+        if (elements.avgSession) elements.avgSession.textContent = avgSession;
+        
+        // إحصائيات الأسئلة والاختبارات
+        const questionsRef = database.ref(DB.questions);
+        questionsRef.once('value', (snapshot) => {
+            const totalQuestions = snapshot.numChildren();
+            if (elements.totalQuestionsStats) elements.totalQuestionsStats.textContent = totalQuestions;
+        });
+        
+        const resultsRef = database.ref(DB.quizResults);
+        resultsRef.once('value', (snapshot) => {
+            const totalQuizzes = snapshot.numChildren();
+            if (elements.totalQuizzesStats) elements.totalQuizzesStats.textContent = totalQuizzes;
+            
+            // حساب إحصائيات النتائج
+            let totalScore = 0;
+            let maxScore = 0;
+            let minScore = 100;
+            let count = 0;
+            
+            snapshot.forEach((childSnapshot) => {
+                const result = childSnapshot.val();
+                const percentage = result.percentage || 0;
+                totalScore += percentage;
+                maxScore = Math.max(maxScore, percentage);
+                minScore = Math.min(minScore, percentage);
+                count++;
+            });
+            
+            const avgScore = count > 0 ? Math.round(totalScore / count) : 0;
+            if (elements.avgScorePercent) elements.avgScorePercent.textContent = avgScore + '%';
+            if (elements.maxScore) elements.maxScore.textContent = maxScore + '%';
+            if (elements.minScore) elements.minScore.textContent = (minScore < 100 ? minScore : 0) + '%';
+        });
+        
+        // تحديث آخر النشاطات
+        updateActivitiesList();
+        
+        // تحديث أفضل المستخدمين
+        updateTopUsers();
+    } catch (error) {
+        console.error('خطأ في تحديث إحصائيات الموقع:', error);
+    }
+}
+
+// تحديث قائمة النشاطات
+function updateActivitiesList() {
+    try {
+        const activitiesList = elements.activitiesList;
+        if (!activitiesList) return;
+        
+        const recentActivities = [...(siteStats.userActivities || [])]
+            .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+            .slice(0, 20);
+        
+        activitiesList.innerHTML = '';
+        
+        if (recentActivities.length === 0) {
+            activitiesList.innerHTML = `
+                <div class="no-questions">
+                    <i class="fas fa-info-circle"></i>
+                    <p>لا توجد نشاطات حتى الآن</p>
+                </div>
+            `;
+            return;
+        }
+        
+        recentActivities.forEach(activity => {
+            const activityDate = new Date(activity.timestamp);
+            const timeAgo = getTimeAgo(activityDate);
+            
+            const activityItem = document.createElement('div');
+            activityItem.className = 'activity-item';
+            
+            let icon = 'fa-eye';
+            let title = '';
+            
+            if (activity.action === 'visit') {
+                icon = 'fa-globe';
+                title = 'زيارة الموقع';
+            } else if (activity.action === 'quiz_complete') {
+                icon = 'fa-check-circle';
+                title = `إكمال اختبار (${activity.percentage || 0}%)`;
+            }
+            
+            activityItem.innerHTML = `
+                <div class="activity-icon">
+                    <i class="fas ${icon}"></i>
+                </div>
+                <div class="activity-content">
+                    <div class="activity-title">${title}</div>
+                    <div class="activity-time">${timeAgo}</div>
+                </div>
+            `;
+            
+            activitiesList.appendChild(activityItem);
+        });
+    } catch (error) {
+        console.error('خطأ في تحديث قائمة النشاطات:', error);
+    }
+}
+
+// تحديث أفضل المستخدمين
+function updateTopUsers() {
+    try {
+        const topUsersList = elements.topUsersList;
+        if (!topUsersList) return;
+        
+        // تجميع نتائج المستخدمين
+        const userScores = {};
+        
+        const resultsRef = database.ref(DB.quizResults);
+        resultsRef.once('value', (snapshot) => {
+            snapshot.forEach((childSnapshot) => {
+                const result = childSnapshot.val();
+                const userId = result.userId || 'guest';
+                const userName = result.userName || 'زائر';
+                const percentage = result.percentage || 0;
+                
+                if (!userScores[userId]) {
+                    userScores[userId] = {
+                        total: 0,
+                        count: 0,
+                        name: userName
+                    };
+                }
+                
+                userScores[userId].total += percentage;
+                userScores[userId].count++;
+            });
+            
+            // حساب المتوسط وترتيب المستخدمين
+            const users = Object.keys(userScores).map(userId => ({
+                id: userId,
+                name: userScores[userId].name,
+                avgScore: Math.round(userScores[userId].total / userScores[userId].count),
+                count: userScores[userId].count
+            }));
+            
+            users.sort((a, b) => b.avgScore - a.avgScore);
+            
+            topUsersList.innerHTML = '';
+            
+            if (users.length === 0) {
+                topUsersList.innerHTML = `
+                    <div class="no-questions">
+                        <i class="fas fa-info-circle"></i>
+                        <p>لا يوجد مستخدمين بعد</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            users.slice(0, 10).forEach((user, index) => {
+                const userItem = document.createElement('div');
+                userItem.className = 'top-user-item';
+                
+                let medal = '';
+                if (index === 0) medal = '🥇';
+                else if (index === 1) medal = '🥈';
+                else if (index === 2) medal = '🥉';
+                
+                userItem.innerHTML = `
+                    <div class="top-user-rank">${medal || (index + 1)}</div>
+                    <div class="top-user-info">
+                        <div class="top-user-name">${user.name}</div>
+                        <div class="top-user-score">متوسط: ${user.avgScore}% (${user.count} اختبار)</div>
+                    </div>
+                `;
+                
+                topUsersList.appendChild(userItem);
+            });
+        });
+    } catch (error) {
+        console.error('خطأ في تحديث أفضل المستخدمين:', error);
+    }
+}
+
+// حساب الوقت الماضي
+function getTimeAgo(date) {
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+    
+    if (diffMins < 1) return 'الآن';
+    if (diffMins < 60) return `قبل ${diffMins} دقيقة`;
+    if (diffHours < 24) return `قبل ${diffHours} ساعة`;
+    if (diffDays < 7) return `قبل ${diffDays} يوم`;
+    return date.toLocaleDateString('ar-SA');
+}
+
+// =============================================
+// إعداد مستمعي الأحداث
+// =============================================
+
+function setupEventListeners() {
+    try {
+        if (elements.themeToggle) {
+            elements.themeToggle.addEventListener('click', toggleDarkMode);
+        }
+        
+        if (elements.headerBackBtn) {
+            elements.headerBackBtn.addEventListener('click', function() {
+                goBack();
+            });
+        }
+        
+        if (elements.loginToggle) {
+            elements.loginToggle.addEventListener('click', showLoginModal);
+        }
+        
+        if (elements.logoutBtn) {
+            elements.logoutBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                logout();
+            });
+        }
+        
+        elements.loginTabs.forEach(tab => {
+            tab.addEventListener('click', function() {
+                elements.loginTabs.forEach(t => t.classList.remove('active'));
+                this.classList.add('active');
+                
+                if (this.dataset.tab === 'login') {
+                    elements.loginForm.classList.add('active');
+                    elements.registerForm.classList.remove('active');
+                } else {
+                    elements.loginForm.classList.remove('active');
+                    elements.registerForm.classList.add('active');
+                }
+            });
+        });
+        
+        if (elements.loginBtn) {
+            elements.loginBtn.addEventListener('click', function() {
+                const email = elements.loginEmail.value.trim();
+                const password = elements.loginPassword.value;
+                const remember = elements.rememberMe.checked;
+                
+                if (!email || !password) {
+                    if (elements.loginError) {
+                        elements.loginError.style.display = 'block';
+                        elements.loginError.textContent = 'الرجاء إدخال البريد الإلكتروني وكلمة المرور';
+                    }
+                    return;
+                }
+                
+                login(email, password, remember);
+            });
+        }
+        
+        if (elements.registerBtn) {
+            elements.registerBtn.addEventListener('click', function() {
+                const name = elements.registerName.value.trim();
+                const email = elements.registerEmail.value.trim();
+                const password = elements.registerPassword.value;
+                const confirmPassword = elements.registerConfirm.value;
+                
+                if (!name || !email || !password || !confirmPassword) {
+                    if (elements.registerError) {
+                        elements.registerError.style.display = 'block';
+                        elements.registerError.textContent = 'الرجاء إدخال جميع البيانات';
+                    }
+                    return;
+                }
+                
+                register(name, email, password, confirmPassword);
+            });
+        }
+        
+        elements.nextBtn.addEventListener('click', nextQuestion);
+        elements.prevBtn.addEventListener('click', prevQuestion);
+        elements.submitBtn.addEventListener('click', submitQuiz);
+        elements.restartBtn.addEventListener('click', restartQuiz);
+        
+        elements.logoContainer.addEventListener('click', function() {
+            try {
+                window.location.reload();
+            } catch (error) {
+                console.error('خطأ في إعادة تحميل الصفحة:', error);
+            }
+        });
+        
+        elements.adminToggle.addEventListener('click', function() {
+            if (currentUser) {
+                // التحقق مرة أخرى للتأكد
+                const isAdmin = checkIfUserIsAdmin(currentUser.email);
+                console.log('النقر على زر الإدارة - هل هو مشرف؟', isAdmin);
+                
+                if (isAdmin) {
+                    elements.adminPanel.classList.add('active');
+                    elements.overlay.classList.add('active');
+                    loadAllQuestions();
+                    loadGradesForAdmin();
+                    loadSectionsForAdmin();
+                    loadSubjectsForAdmin();
+                    loadLessonsForAdmin();
+                    loadSublessonsForAdmin();
+                    updateSiteStats();
+                    loadAdminsForAdmin();
+                } else {
+                    alert('عذراً، أنت لست مشرفاً');
+                }
+            } else {
+                showLoginModal();
+            }
+        });
+        
+        elements.closeAdmin.addEventListener('click', function() {
+            elements.adminPanel.classList.remove('active');
+            elements.overlay.classList.remove('active');
+        });
+        
+        elements.overlay.addEventListener('click', function() {
+            elements.loginModal.style.display = 'none';
+            elements.adminPanel.classList.remove('active');
+            elements.overlay.classList.remove('active');
+        });
+        
+        elements.categorySelect.addEventListener('change', function() {
+            try {
+                filterQuestionsByCategory(this.value);
+            } catch (error) {
+                console.error('خطأ في تصفية الأسئلة:', error);
+            }
+        });
+        
+        elements.adminNavItems.forEach(item => {
+            item.addEventListener('click', function() {
+                try {
+                    switchAdminTab(this.dataset.tab);
+                } catch (error) {
+                    console.error('خطأ في تبديل التبويبات:', error);
+                }
+            });
+        });
+        
+        if (elements.questionType) {
+            elements.questionType.addEventListener('change', function() {
+                try {
+                    if (this.value === 'mcq') {
+                        elements.mcqOptions.style.display = 'block';
+                        elements.truefalseOptions.style.display = 'none';
+                    } else {
+                        elements.mcqOptions.style.display = 'none';
+                        elements.truefalseOptions.style.display = 'block';
+                    }
+                } catch (error) {
+                    console.error('خطأ في تغيير نوع السؤال:', error);
+                }
+            });
+        }
+        
+        if (elements.addQuestionBtn) {
+            elements.addQuestionBtn.addEventListener('click', addNewQuestion);
+        }
+        
+        if (elements.saveSettingsBtn) {
+            elements.saveSettingsBtn.addEventListener('click', saveSystemSettings);
+        }
+        
+        if (elements.addGradeBtn) {
+            elements.addGradeBtn.addEventListener('click', addNewGrade);
+        }
+        
+        if (elements.addSectionBtn) {
+            elements.addSectionBtn.addEventListener('click', addNewSection);
+        }
+        
+        if (elements.addSubjectBtn) {
+            elements.addSubjectBtn.addEventListener('click', addNewSubject);
+        }
+        
+        if (elements.addLessonBtn) {
+            elements.addLessonBtn.addEventListener('click', addNewLesson);
+        }
+        
+        if (elements.addSublessonBtn) {
+            elements.addSublessonBtn.addEventListener('click', addNewSublesson);
+        }
+        
+        if (elements.addAdminBtn) {
+            elements.addAdminBtn.addEventListener('click', addNewAdmin);
+        }
+        
+        if (elements.filterGrade && elements.filterSection) {
+            elements.filterGrade.addEventListener('change', loadAllQuestions);
+            elements.filterSection.addEventListener('change', loadAllQuestions);
+            elements.filterSubject.addEventListener('change', loadAllQuestions);
+            elements.filterType.addEventListener('change', loadAllQuestions);
+        }
+        
+        if (elements.saveAdBtn) {
+            elements.saveAdBtn.addEventListener('click', saveAd);
+        }
+        
+        if (elements.adTitleInput && elements.adDescriptionInput) {
+            elements.adTitleInput.addEventListener('input', updateAdPreview);
+            elements.adDescriptionInput.addEventListener('input', updateAdPreview);
+        }
+        
+        if (elements.adClose) {
+            elements.adClose.addEventListener('click', function() {
+                elements.adContainer.style.display = 'none';
+            });
+        }
+        
+        if (elements.adAction) {
+            elements.adAction.addEventListener('click', function() {
+                try {
+                    if (currentAd && currentAd.url) {
+                        window.open(currentAd.url, '_blank');
+                    }
+                } catch (error) {
+                    console.error('خطأ في فتح رابط الإعلان:', error);
+                }
+            });
+        }
+        
+        if (elements.autoBackup) {
+            elements.autoBackup.addEventListener('change', function() {
+                autoBackupEnabled = this.checked;
+                localStorage.setItem('autoBackupEnabled', autoBackupEnabled);
+            });
+        }
+        
+        if (elements.manualBackupBtn) {
+            elements.manualBackupBtn.addEventListener('click', createManualBackup);
+        }
+        
+        if (elements.restoreBackupBtn) {
+            elements.restoreBackupBtn.addEventListener('click', restoreBackup);
+        }
+        
+        if (elements.questionGrade) {
+            elements.questionGrade.addEventListener('change', function() {
+                const selectedGrade = this.value;
+                updateSectionDropdowns(selectedGrade);
+                elements.questionSection.value = '';
+                elements.questionSubject.value = '';
+                elements.questionLesson.value = '';
+                elements.questionSublesson.value = '';
+                updateSubjectDropdowns('');
+                updateLessonDropdowns('');
+                updateSublessonDropdowns('');
+            });
+        }
+        
+        if (elements.questionSection) {
+            elements.questionSection.addEventListener('change', function() {
+                const selectedSection = this.value;
+                updateSubjectDropdowns(selectedSection);
+                elements.questionSubject.value = '';
+                elements.questionLesson.value = '';
+                elements.questionSublesson.value = '';
+                updateLessonDropdowns('');
+                updateSublessonDropdowns('');
+            });
+        }
+        
+        if (elements.questionSubject) {
+            elements.questionSubject.addEventListener('change', function() {
+                const selectedSubject = this.value;
+                updateLessonDropdowns(selectedSubject);
+                elements.questionLesson.value = '';
+                elements.questionSublesson.value = '';
+                updateSublessonDropdowns('');
+            });
+        }
+        
+        if (elements.questionLesson) {
+            elements.questionLesson.addEventListener('change', function() {
+                const selectedLesson = this.value;
+                updateSublessonDropdowns(selectedLesson);
+                elements.questionSublesson.value = '';
+            });
+        }
+        
+        // إغلاق النوافذ بالضغط على ESC
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                if (elements.loginModal.style.display === 'flex') {
+                    closeLoginModal();
+                }
+                if (elements.adminPanel.classList.contains('active')) {
+                    elements.adminPanel.classList.remove('active');
+                    elements.overlay.classList.remove('active');
+                }
+            }
+        });
+        
+    } catch (error) {
+        console.error('خطأ في إعداد مستمعي الأحداث:', error);
+    }
+}
+
+// =============================================
+// دوال إضافية
+// =============================================
+
+// تبديل وضع Dark Mode
+function toggleDarkMode() {
+    try {
+        isDarkMode = !isDarkMode;
+        
+        if (isDarkMode) {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            elements.themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
+            localStorage.setItem('darkMode', 'true');
+        } else {
+            document.documentElement.removeAttribute('data-theme');
+            elements.themeToggle.innerHTML = '<i class="fas fa-moon"></i>';
+            localStorage.setItem('darkMode', 'false');
+        }
+        
+        // تحديث إعدادات المستخدم إذا كان مسجلاً
+        if (currentUser) {
+            const profileRef = database.ref(`${DB.profiles}/${currentUser.id}/settings`);
+            profileRef.update({ darkMode: isDarkMode });
+        }
+    } catch (error) {
+        console.error('خطأ في تبديل وضع Dark Mode:', error);
+    }
+}
+
+// =============================================
 // بدء التطبيق
+// =============================================
 document.addEventListener('DOMContentLoaded', initApp);
